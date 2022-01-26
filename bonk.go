@@ -1,28 +1,68 @@
 package main
 
 import (
+	_ "embed"
 	"fmt"
+	"log"
+	"os"
+	"os/exec"
 	"regexp"
+	"strings"
 
 	"github.com/nxadm/tail"
 )
 
 var (
-	terminalSessionRule = regexp.MustCompile(`terminal=([a-zA-Z\/0-9]+)`)
-	exeRule             = regexp.MustCompile(`exe="(.*?)"`)
-	keyRule             = regexp.MustCompile(`key="(.*?)"`)
-	pidRule             = regexp.MustCompile(`pid=([\d]+)`)
+	terminalRule = regexp.MustCompile(`terminal=([\w/]+)`)
+	ttyRule      = regexp.MustCompile(`tty=([\w/]+)`)
+	exeRule      = regexp.MustCompile(`exe="(.*?)"`)
+	keyRule      = regexp.MustCompile(`key="(.*?)"`)
+	pidRule      = regexp.MustCompile(`pid=([\d]+)`)
+	msgRule      = regexp.MustCompile("msg=audit((.*?))")
+	nameRule     = regexp.MustCompile("name=\"(.*?)\"")
 )
 
+//go:embed audit.rules
+var embeddedRules []byte
+
 func parseAuditRuleRegex(rules *regexp.Regexp, msg string, remove string) string {
+	// apply regex magic. Maybe could be better
 	value := rules.Find([]byte(msg))
+
+	// if it zero nothing found
 	if len(value) == 0 {
-		// fmt.Println("Failed to find regex")
 		return ""
 	}
 	sizeOfRemove := len(remove)
-	return string(value[sizeOfRemove:])
+	output := string(value[sizeOfRemove:])
 
+	if output[0] == '"' {
+		outputWithoutQuotes := strings.Trim(output, "\"")
+		return outputWithoutQuotes
+	}
+	return output
+
+}
+
+// TODO future problem
+func embedOurRules() {
+
+	currentRules, err := os.Open("/etc/audit/rules.d/audit.rules")
+	if err != nil {
+		log.Fatalf("Failed to open operating system rules.\n%s", err)
+	}
+	defer currentRules.Close()
+
+	currentRules.Write(embeddedRules)
+	// err = exec.Command("auditctl /etc/audit/rules.d/audit.rules").Run()
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+
+}
+
+func init() {
+	// embedOurRules()
 }
 
 func main() {
@@ -36,24 +76,32 @@ func main() {
 	// Print the text of each received line
 
 	for line := range t.Lines {
-		// terminalSession := terminalSessionRule.Find([]byte(line.Text))
-		// PID := pidRule.Find([]byte(line.Text))
-		// commandRan := exeRule.Find([]byte(line.Text))
-		// Key := keyRule.Find(([]byte(line.Text)))
-		// fmt.Printf("\nTERM=%s\tPID=%s\tCMD=%s\tKEY=%s\n", terminalSession, PID, commandRan, Key)
 
 		key := parseAuditRuleRegex(keyRule, string(line.Text), "key=")
 
-		if key == "specialfiles" || key == "unauthedfileaccess" || key == "priv_esc" {
-
-			fmt.Printf("key = %s\n", key)
-			fmt.Print("---\n")
+		if key == "specialfiles" || key == "cron" || key == "priv_esc" || key == "etcpasswd" {
 
 			pid := parseAuditRuleRegex(pidRule, string(line.Text), "pid=")
-			fmt.Printf("pid = %s\n", pid)
 
 			commandRan := parseAuditRuleRegex(exeRule, string(line.Text), "exe=")
-			fmt.Printf("cmd = %s\n", commandRan)
+
+			ttyName := parseAuditRuleRegex(ttyRule, string(line.Text), "tty=")
+
+			fmt.Printf("key : %s\n\t TERMINAL:\t%s\tpid:\t%s\tterminal:\t%s", key, ttyName, pid, commandRan)
+			fmt.Print("---\n")
+
+			// so that I do not kill *all* processes
+			if ttyName == "pts2" || key == "etcpasswd" || key == "priv_esc" {
+				_, err := exec.Command("kill", "-9", pid).Output()
+				// whereToWrite := fmt.Sprintf("/proc/%s/fd/0", pid)
+				// _, err := exec.Command("echo", "bonk", ">", whereToWrite).Output()
+				if err != nil {
+					if _, ok := err.(*exec.ExitError); !ok {
+						fmt.Println("Failed to do the deed")
+					}
+				}
+
+			}
 
 		}
 
