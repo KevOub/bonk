@@ -18,6 +18,7 @@ var (
 	exeRule      = regexp.MustCompile(`exe="(.*?)"`)
 	keyRule      = regexp.MustCompile(`key="(.*?)"`)
 	pidRule      = regexp.MustCompile(`pid=([\d]+)`)
+	ppidRule     = regexp.MustCompile(`ppid=([\d]+)`)
 	msgRule      = regexp.MustCompile("msg=audit((.*?))")
 	nameRule     = regexp.MustCompile("name=\"(.*?)\"")
 )
@@ -86,6 +87,8 @@ func main() {
 			commandRan := parseAuditRuleRegex(exeRule, string(line.Text), "exe=")
 
 			ttyName := parseAuditRuleRegex(ttyRule, string(line.Text), "tty=")
+
+			// ppid := parseAuditRuleRegex(ppidRule, string(line.Text), "ppid=")
 
 			fmt.Printf("key : %s\n\t TERMINAL:\t%s\tpid:\t%s\tterminal:\t%s", key, ttyName, pid, commandRan)
 			fmt.Print("---\n")
