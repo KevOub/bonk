@@ -32,6 +32,9 @@ var (
 //go:embed good.rules
 var embeddedRules []byte
 
+//go:embed bonk.art
+var bonkArt []byte
+
 // turns regex rule to human readable
 func parseAuditRuleRegex(rules *regexp.Regexp, msg string, remove string) string {
 	// apply regex magic. Maybe could be better
@@ -80,28 +83,22 @@ func Copy(src, dst string) error {
 
 // TODO future problem
 func embedOurRules() {
-
-	currentRules, err := os.OpenFile(RULESPATH, os.O_TRUNC, 0777)
+	// os.O_TRUNC empties the file on opening
+	// currentRules, err := os.OpenFile(RULESPATH, os.O_TRUNC, 0777)
+	currentRules, err := os.OpenFile(RULESPATH, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0777)
 	if err != nil {
 		log.Fatalf("Failed to open operating system rules.\n%s", err)
 	}
 	defer currentRules.Close()
 
-	// err = currentRules.Truncate(0)
-	// if err != nil {
-	// 	log.Fatalf("Failed to empty file", err)
-	// }
-
-	currentRules.Write(embeddedRules)
-	// err = exec.Command("auditctl /etc/audit/rules.d/audit.rules").Run()
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-
+	_, err = currentRules.Write(embeddedRules)
+	if err != nil {
+		log.Fatalf("Failed to open operating system rules.\n%s", err)
+	}
 }
 
 func runCMD(command, flavortext string) {
-	byteCommand := strings.Split(command, " ")
+	byteCommand := strings.Split(command, " ") // splits into bytes seperated by spaces
 	_, err := exec.Command(byteCommand[0], byteCommand[1:]...).Output()
 	if err != nil {
 		if _, ok := err.(*exec.ExitError); !ok {
@@ -111,14 +108,15 @@ func runCMD(command, flavortext string) {
 }
 
 func clearLogs() {
-	// err := os.Truncate(LOGSPATH, 1)
-	// if err != nil {
-	// 	log.Fatalf("Failed to yeet the contents of %s:%v", LOGSPATH, err)
-	// }
 	f, err := os.OpenFile(LOGSPATH, os.O_TRUNC, 0777)
 	if err != nil {
 		log.Fatalf("Failed to yeet the contents of %s:%v", LOGSPATH, err)
 	}
+	stat, err := f.Stat()
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(stat.Size())
 	f.Close()
 }
 
@@ -128,10 +126,16 @@ func init() {
 	// TODO make this backup log
 	// Copy(LOGSPATH, "/v")
 	clearLogs()
-	embedOurRules()
-	runCMD("augenrules --load", "failed to add rules")
-	runCMD("service start auditd", "failed to restart audit")
+	fmt.Println("[*] Cleared logs")
 
+	embedOurRules()
+	fmt.Println("[*] Embedded our rules")
+
+	runCMD("augenrules --load", "failed to add rules")
+	fmt.Println("[*] reloaded the rules")
+	runCMD("service auditd start", "failed to restart audit")
+	runCMD("service start auditd", "failed to restart audit")
+	fmt.Println("[*] restarted the service")
 }
 
 func main() {
@@ -140,6 +144,10 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+
+	// extra line just to print bonk boi
+
+	fmt.Println(string(bonkArt))
 
 	// Print the text of each received line
 	for line := range t.Lines {
@@ -152,17 +160,23 @@ func main() {
 
 			commandRan := parseAuditRuleRegex(exeRule, string(line.Text), "exe=")
 
-			ttyName := parseAuditRuleRegex(ttyRule, string(line.Text), "tty=")
+			// ttyName := parseAuditRuleRegex(ttyRule, string(line.Text), "tty=")
+
+			terminalName := parseAuditRuleRegex(terminalRule, string(line.Text), "terminal=")
 
 			// ppid := parseAuditRuleRegex(ppidRule, string(line.Text), "ppid=")
 
-			fmt.Printf("key : %s\n\t TERMINAL:\t%s\tpid:\t%s\tterminal:\t%s", key, ttyName, pid, commandRan)
+			fmt.Printf("key : %s\n\t TERMINAL:\t%s\tpid:\t%s\tterminal:\t%s", key, terminalName, pid, commandRan)
 			fmt.Print("---\n")
 
 			// so that I do not kill *all* processes
 			if key == "etcpasswd" || key == "priv_esc" {
-				newPTY := strings.Replace(ttyName, "s", "s/", 1)
-				fmt.Println(newPTY)
+				fmt.Println("test")
+				// newPTY := strings.Replace(ttyName, "s", "s/", 1)
+				// fmt.Println(newPTY)
+
+				// commandBuilder := fmt.Sprintf("echo 'bonk!' > %s", terminalName)
+				// runCMD(commandBuilder, "failed to kill a pid")
 
 				commandBuilder := fmt.Sprintf("kill -9 %s", pid)
 				runCMD(commandBuilder, "failed to kill a pid")

@@ -5,6 +5,6 @@ if [ "$EUID" -ne 0 ]
   exit
 fi
 
-mkdir /var/bonk
-wget https://github.com/KevOub/bonk/blob/master/bonk?raw=true -O /var/bonk/bonk
-chmod 600 /var/bonk/bonk
+wget https://github.com/KevOub/bonk/blob/master/bonk?raw=true -O /usr/sbin/bonk
+chmod u+x /usr/sbin/bonk
+echo "Installed the bonk"
