@@ -3,6 +3,7 @@ package main
 import (
 	_ "embed"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -10,6 +11,11 @@ import (
 	"strings"
 
 	"github.com/nxadm/tail"
+)
+
+const (
+	RULESPATH = "/etc/audit/rules.d/audit.rules"
+	LOGSPATH  = "/var/log/audit/audit.log"
 )
 
 var (
@@ -23,9 +29,10 @@ var (
 	nameRule     = regexp.MustCompile("name=\"(.*?)\"")
 )
 
-//go:embed audit.rules
+//go:embed good.rules
 var embeddedRules []byte
 
+// turns regex rule to human readable
 func parseAuditRuleRegex(rules *regexp.Regexp, msg string, remove string) string {
 	// apply regex magic. Maybe could be better
 	value := rules.Find([]byte(msg))
@@ -35,6 +42,10 @@ func parseAuditRuleRegex(rules *regexp.Regexp, msg string, remove string) string
 		return ""
 	}
 	sizeOfRemove := len(remove)
+
+	if sizeOfRemove > len(value) {
+		log.Fatalf("REMOVE=%s is too long for msg=%s\n", remove, msg)
+	}
 	output := string(value[sizeOfRemove:])
 
 	if output[0] == '"' {
@@ -45,14 +56,41 @@ func parseAuditRuleRegex(rules *regexp.Regexp, msg string, remove string) string
 
 }
 
+// Copy the src file to dst. Any existing file will be overwritten and will not
+// copy file attributes.
+func Copy(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, in)
+	if err != nil {
+		return err
+	}
+	return out.Close()
+}
+
 // TODO future problem
 func embedOurRules() {
 
-	currentRules, err := os.Open("/etc/audit/rules.d/audit.rules")
+	currentRules, err := os.OpenFile(RULESPATH, os.O_TRUNC, 0777)
 	if err != nil {
 		log.Fatalf("Failed to open operating system rules.\n%s", err)
 	}
 	defer currentRules.Close()
+
+	// err = currentRules.Truncate(0)
+	// if err != nil {
+	// 	log.Fatalf("Failed to empty file", err)
+	// }
 
 	currentRules.Write(embeddedRules)
 	// err = exec.Command("auditctl /etc/audit/rules.d/audit.rules").Run()
@@ -62,20 +100,48 @@ func embedOurRules() {
 
 }
 
+func runCMD(command, flavortext string) {
+	byteCommand := strings.Split(command, " ")
+	_, err := exec.Command(byteCommand[0], byteCommand[1:]...).Output()
+	if err != nil {
+		if _, ok := err.(*exec.ExitError); !ok {
+			log.Fatalf("%s\n%s", flavortext, err)
+		}
+	}
+}
+
+func clearLogs() {
+	// err := os.Truncate(LOGSPATH, 1)
+	// if err != nil {
+	// 	log.Fatalf("Failed to yeet the contents of %s:%v", LOGSPATH, err)
+	// }
+	f, err := os.OpenFile(LOGSPATH, os.O_TRUNC, 0777)
+	if err != nil {
+		log.Fatalf("Failed to yeet the contents of %s:%v", LOGSPATH, err)
+	}
+	f.Close()
+}
+
 func init() {
-	// embedOurRules()
+	// first copy logs because they might be important
+
+	// TODO make this backup log
+	// Copy(LOGSPATH, "/v")
+	clearLogs()
+	embedOurRules()
+	runCMD("augenrules --load", "failed to add rules")
+	runCMD("service start auditd", "failed to restart audit")
+
 }
 
 func main() {
 	t, err := tail.TailFile(
-		"/var/log/audit/audit.log", tail.Config{Follow: true, ReOpen: true})
+		LOGSPATH, tail.Config{Follow: true, ReOpen: true})
 	if err != nil {
 		panic(err)
 	}
-	// var exeName
 
 	// Print the text of each received line
-
 	for line := range t.Lines {
 
 		key := parseAuditRuleRegex(keyRule, string(line.Text), "key=")
@@ -94,15 +160,12 @@ func main() {
 			fmt.Print("---\n")
 
 			// so that I do not kill *all* processes
-			if ttyName == "pts2" || key == "etcpasswd" || key == "priv_esc" {
-				_, err := exec.Command("kill", "-9", pid).Output()
-				// whereToWrite := fmt.Sprintf("/proc/%s/fd/0", pid)
-				// _, err := exec.Command("echo", "bonk", ">", whereToWrite).Output()
-				if err != nil {
-					if _, ok := err.(*exec.ExitError); !ok {
-						fmt.Println("Failed to do the deed")
-					}
-				}
+			if key == "etcpasswd" || key == "priv_esc" {
+				newPTY := strings.Replace(ttyName, "s", "s/", 1)
+				fmt.Println(newPTY)
+
+				commandBuilder := fmt.Sprintf("kill -9 %s", pid)
+				runCMD(commandBuilder, "failed to kill a pid")
 
 			}
 
