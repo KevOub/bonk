@@ -133,8 +133,10 @@ func init() {
 
 	runCMD("augenrules --load", "failed to add rules")
 	fmt.Println("[*] reloaded the rules")
-	runCMD("service auditd start", "failed to restart audit")
-	runCMD("service start auditd", "failed to restart audit")
+	runCMD("service auditd rotate", "failed to rotate logs")
+	runCMD("pkill -HUP auditd", "failed to add rules")
+	// runCMD("service auditd start", "failed to restart audit")
+	// runCMD("service start auditd", "failed to restart audit")
 	fmt.Println("[*] restarted the service")
 }
 
@@ -160,13 +162,13 @@ func main() {
 
 			commandRan := parseAuditRuleRegex(exeRule, string(line.Text), "exe=")
 
-			// ttyName := parseAuditRuleRegex(ttyRule, string(line.Text), "tty=")
+			ttyName := parseAuditRuleRegex(ttyRule, string(line.Text), "tty=")
 
-			terminalName := parseAuditRuleRegex(terminalRule, string(line.Text), "terminal=")
+			// terminalName := parseAuditRuleRegex(terminalRule, string(line.Text), "terminal=")
 
 			// ppid := parseAuditRuleRegex(ppidRule, string(line.Text), "ppid=")
 
-			fmt.Printf("key : %s\n\t TERMINAL:\t%s\tpid:\t%s\tterminal:\t%s", key, terminalName, pid, commandRan)
+			fmt.Printf("key : %s\n\t TERMINAL:\t%s\tpid:\t%s\tterminal:\t%s", key, ttyName, pid, commandRan)
 			fmt.Print("---\n")
 
 			// so that I do not kill *all* processes
@@ -175,7 +177,7 @@ func main() {
 				// newPTY := strings.Replace(ttyName, "s", "s/", 1)
 				// fmt.Println(newPTY)
 
-				// commandBuilder := fmt.Sprintf("echo 'bonk!' > %s", terminalName)
+				// commandBuilder := fmt.Sprintf("wall -g 1000 \" Bonked this terminal! : %s \"", ttyName)
 				// runCMD(commandBuilder, "failed to kill a pid")
 
 				commandBuilder := fmt.Sprintf("kill -9 %s", pid)
