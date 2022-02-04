@@ -27,7 +27,13 @@ var (
 	ppidRule     = regexp.MustCompile(`ppid=([\d]+)`)
 	msgRule      = regexp.MustCompile("msg=audit((.*?))")
 	nameRule     = regexp.MustCompile("name=\"(.*?)\"")
+	auidRule     = regexp.MustCompile("AUID=\"(.*?)\"")
 )
+
+/*
+AUID:
+Records the Audit user ID. This ID is assigned to a user upon login and is inherited by every process even when the user's identity changes (for example, by switching user accounts with su - john).
+*/
 
 //go:embed good.rules
 var embeddedRules []byte
@@ -163,6 +169,7 @@ func main() {
 			commandRan := parseAuditRuleRegex(exeRule, string(line.Text), "exe=")
 
 			ttyName := parseAuditRuleRegex(ttyRule, string(line.Text), "tty=")
+			auidName := parseAuditRuleRegex(auidRule, string(line.Text), "AUID=")
 
 			// terminalName := parseAuditRuleRegex(terminalRule, string(line.Text), "terminal=")
 
@@ -173,15 +180,16 @@ func main() {
 
 			// so that I do not kill *all* processes
 			if key == "etcpasswd" || key == "priv_esc" {
-				fmt.Println("test")
+				if auidName != "sysadmin" && auidName != "root" {
+					commandBuilder := fmt.Sprintf("kill -9 %s", pid)
+					runCMD(commandBuilder, "failed to kill a pid")
+				}
+
 				// newPTY := strings.Replace(ttyName, "s", "s/", 1)
 				// fmt.Println(newPTY)
 
 				// commandBuilder := fmt.Sprintf("wall -g 1000 \" Bonked this terminal! : %s \"", ttyName)
 				// runCMD(commandBuilder, "failed to kill a pid")
-
-				commandBuilder := fmt.Sprintf("kill -9 %s", pid)
-				runCMD(commandBuilder, "failed to kill a pid")
 
 			}
 
