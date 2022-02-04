@@ -2,8 +2,8 @@ package main
 
 import (
 	_ "embed"
+	"flag"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -19,7 +19,7 @@ const (
 )
 
 var (
-	terminalRule = regexp.MustCompile(`terminal=([\w/]+)`)
+	terminalRule = regexp.MustCompile(`terminal=([\w\/]+)`)
 	ttyRule      = regexp.MustCompile(`tty=([\w/]+)`)
 	exeRule      = regexp.MustCompile(`exe="(.*?)"`)
 	keyRule      = regexp.MustCompile(`key="(.*?)"`)
@@ -29,11 +29,6 @@ var (
 	nameRule     = regexp.MustCompile("name=\"(.*?)\"")
 	auidRule     = regexp.MustCompile("AUID=\"(.*?)\"")
 )
-
-/*
-AUID:
-Records the Audit user ID. This ID is assigned to a user upon login and is inherited by every process even when the user's identity changes (for example, by switching user accounts with su - john).
-*/
 
 //go:embed good.rules
 var embeddedRules []byte
@@ -65,29 +60,6 @@ func parseAuditRuleRegex(rules *regexp.Regexp, msg string, remove string) string
 
 }
 
-// Copy the src file to dst. Any existing file will be overwritten and will not
-// copy file attributes.
-func Copy(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-
-	out, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	_, err = io.Copy(out, in)
-	if err != nil {
-		return err
-	}
-	return out.Close()
-}
-
-// TODO future problem
 func embedOurRules() {
 	// os.O_TRUNC empties the file on opening
 	// currentRules, err := os.OpenFile(RULESPATH, os.O_TRUNC, 0777)
@@ -126,27 +98,50 @@ func clearLogs() {
 	f.Close()
 }
 
-func init() {
-	// first copy logs because they might be important
+func bonkProc(line *tail.Line, key string, userToNotKill string) {
+	pid := parseAuditRuleRegex(pidRule, string(line.Text), "pid=")
 
-	// TODO make this backup log
-	// Copy(LOGSPATH, "/v")
-	clearLogs()
-	fmt.Println("[*] Cleared logs")
+	commandRan := parseAuditRuleRegex(exeRule, string(line.Text), "exe=")
+
+	ttyName := parseAuditRuleRegex(ttyRule, string(line.Text), "tty=")
+	auidName := parseAuditRuleRegex(auidRule, string(line.Text), "AUID=")
+
+	// terminalName := parseAuditRuleRegex(terminalRule, string(line.Text), "terminal=")
+
+	// ppid := parseAuditRuleRegex(ppidRule, string(line.Text), "ppid=")
+
+	fmt.Printf("key : %s\n\t TERMINAL:\t%s\tPID:\t%s\tCOMMAND:\t%s\tauid:\t%s", key, ttyName, pid, commandRan, auidName)
+	fmt.Print("---\n")
+
+	/*
+	   AUID:
+	   Records the Audit user ID. This ID is assigned to a user upon login and is inherited by every process even when the user's identity changes (for example, by switching user accounts with su - john).
+	*/
+	if auidName != userToNotKill && auidName != "root" {
+		commandBuilder := fmt.Sprintf("kill -9 %s", pid)
+		runCMD(commandBuilder, "failed to kill a pid")
+	}
+
+}
+
+func init() {
 
 	embedOurRules()
 	fmt.Println("[*] Embedded our rules")
-
 	runCMD("augenrules --load", "failed to add rules")
 	fmt.Println("[*] reloaded the rules")
 	runCMD("service auditd rotate", "failed to rotate logs")
-	runCMD("pkill -HUP auditd", "failed to add rules")
-	// runCMD("service auditd start", "failed to restart audit")
-	// runCMD("service start auditd", "failed to restart audit")
+	clearLogs()
+	fmt.Println("[*] Cleared logs")
+	runCMD("pkill -HUP auditd", "failed to restart auditd")
 	fmt.Println("[*] restarted the service")
 }
 
 func main() {
+	userToNotKill := flag.String("user", "sysadmin", "the user to not kill with bonk")
+
+	flag.Parse()
+
 	t, err := tail.TailFile(
 		LOGSPATH, tail.Config{Follow: true, ReOpen: true})
 	if err != nil {
@@ -154,61 +149,34 @@ func main() {
 	}
 
 	// extra line just to print bonk boi
-
 	fmt.Println(string(bonkArt))
+
+	var bonkableOffenses = []string{
+		"unauthedfileaccess", "perm_mod", "etcpasswd", "etcgroup", "opasswd", "group_modification", "user_modification", "pam", "specialfiles", "cron", // modify users, touch cron or pam
+		"sshd", "systemd", // touch systemd or ssh config files bonk
+		"power",                                           // do not turn off our computers
+		"priv_esc",                                        // su, sudo, sudoers, sudoers.d
+		"susp_activity",                                   // wget, curl, base64, nc, netcat, ssh*, scp*, sftp*, ftp*, socat, wireshark, tshark, rawshark, rdesktop, nmap
+		"sbin_susp",                                       // iptables, ip6tables, ifconfig*, arptables*,tcpdump, ufw*...
+		"shell_profiles",                                  // modifying any of these: /etc/profile.d/ /etc/profile /etc/shells  /etc/bashrc /etc/csh.cshrc /etc/csh.login /etc/fish/ /etc/zsh/
+		"software_mgmt",                                   // apt -> dnf -> yum -> dpkg -> snap -> pip3* , all killed
+		"data_injection", "register_injection", "tracing"} // if they try to get cute and inject via ptrace we will know
+
+	// The one's with the stars will probably be removed
+	// "recon",                                           // whoami*, id*, hostname*, uname*, issue*, hostname*
+	// recon broke ssh because of the ssh banner
 
 	// Print the text of each received line
 	for line := range t.Lines {
 
 		key := parseAuditRuleRegex(keyRule, string(line.Text), "key=")
 
-		if key == "specialfiles" || key == "cron" || key == "priv_esc" || key == "etcpasswd" {
-
-			pid := parseAuditRuleRegex(pidRule, string(line.Text), "pid=")
-
-			commandRan := parseAuditRuleRegex(exeRule, string(line.Text), "exe=")
-
-			ttyName := parseAuditRuleRegex(ttyRule, string(line.Text), "tty=")
-			auidName := parseAuditRuleRegex(auidRule, string(line.Text), "AUID=")
-
-			// terminalName := parseAuditRuleRegex(terminalRule, string(line.Text), "terminal=")
-
-			// ppid := parseAuditRuleRegex(ppidRule, string(line.Text), "ppid=")
-
-			fmt.Printf("key : %s\n\t TERMINAL:\t%s\tpid:\t%s\tterminal:\t%s", key, ttyName, pid, commandRan)
-			fmt.Print("---\n")
-
-			// so that I do not kill *all* processes
-			if key == "etcpasswd" || key == "priv_esc" {
-				if auidName != "sysadmin" && auidName != "root" {
-					commandBuilder := fmt.Sprintf("kill -9 %s", pid)
-					runCMD(commandBuilder, "failed to kill a pid")
-				}
-
-				// newPTY := strings.Replace(ttyName, "s", "s/", 1)
-				// fmt.Println(newPTY)
-
-				// commandBuilder := fmt.Sprintf("wall -g 1000 \" Bonked this terminal! : %s \"", ttyName)
-				// runCMD(commandBuilder, "failed to kill a pid")
-
+		for _, offense := range bonkableOffenses {
+			if key == offense {
+				bonkProc(line, key, *userToNotKill)
 			}
-
 		}
 
-		// if string(Key) == "high" {
-		// 	// commandBuilder := fmt.Sprintf("kill -9 %s", PID)
-
-		// commandBuilder := fmt.Sprintf(" head -n 1000000 /dev/urandom | base64 >  %s", terminalSession)
-		// commandBuilder := fmt.Sprintf("ps -p %s -o format", pid)
-		// cmd, _ := exec.Command(commandBuilder).Output()
-		// cmd.Run()
-		// fmt.Println(cmd)
-		// 	fmt.Print("RUNNING")
-
-		// }
-
-		// fmt.Println(terminalSession)
-		// fmt.Println(line.Text)
 	}
 
 }
