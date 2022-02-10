@@ -7,27 +7,14 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"regexp"
 	"strings"
 
 	"github.com/nxadm/tail"
 )
 
-const (
+var (
 	RULESPATH = "/etc/audit/rules.d/audit.rules"
 	LOGSPATH  = "/var/log/audit/audit.log"
-)
-
-var (
-	terminalRule = regexp.MustCompile(`terminal=([\w\/]+)`)
-	ttyRule      = regexp.MustCompile(`tty=([\w/]+)`)
-	exeRule      = regexp.MustCompile(`exe="(.*?)"`)
-	keyRule      = regexp.MustCompile(`key="(.*?)"`)
-	pidRule      = regexp.MustCompile(`pid=([\d]+)`)
-	ppidRule     = regexp.MustCompile(`ppid=([\d]+)`)
-	msgRule      = regexp.MustCompile("msg=audit((.*?))")
-	nameRule     = regexp.MustCompile("name=\"(.*?)\"")
-	auidRule     = regexp.MustCompile("AUID=\"(.*?)\"")
 )
 
 //go:embed good.rules
@@ -37,33 +24,11 @@ var embeddedRules []byte
 var bonkArt []byte
 
 // turns regex rule to human readable
-func parseAuditRuleRegex(rules *regexp.Regexp, msg string, remove string) string {
-	// apply regex magic. Maybe could be better
-	value := rules.Find([]byte(msg))
 
-	// if it zero nothing found
-	if len(value) == 0 {
-		return ""
-	}
-	sizeOfRemove := len(remove)
-
-	if sizeOfRemove > len(value) {
-		log.Fatalf("REMOVE=%s is too long for msg=%s\n", remove, msg)
-	}
-	output := string(value[sizeOfRemove:])
-
-	if output[0] == '"' {
-		outputWithoutQuotes := strings.Trim(output, "\"")
-		return outputWithoutQuotes
-	}
-	return output
-
-}
-
-func embedOurRules() {
+func embedOurRules(rulesPath string) {
 	// os.O_TRUNC empties the file on opening
 	// currentRules, err := os.OpenFile(RULESPATH, os.O_TRUNC, 0777)
-	currentRules, err := os.OpenFile(RULESPATH, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0777)
+	currentRules, err := os.OpenFile(rulesPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0777)
 	if err != nil {
 		log.Fatalf("Failed to open operating system rules.\n%s", err)
 	}
@@ -85,11 +50,12 @@ func runCMD(command, flavortext string) {
 	}
 }
 
-func clearLogs() {
-	f, err := os.OpenFile(LOGSPATH, os.O_TRUNC, 0777)
+func clearLogs(logsPath string) {
+	f, err := os.OpenFile(logsPath, os.O_TRUNC, 0777)
 	if err != nil {
-		log.Fatalf("Failed to yeet the contents of %s:%v", LOGSPATH, err)
+		log.Fatalf("Failed to yeet the contents of %s:%v", logsPath, err)
 	}
+	f.Truncate(0)
 	stat, err := f.Stat()
 	if err != nil {
 		log.Fatal(err)
@@ -99,16 +65,16 @@ func clearLogs() {
 }
 
 func bonkProc(line *tail.Line, key string, userToNotKill string) {
-	pid := parseAuditRuleRegex(pidRule, string(line.Text), "pid=")
+	pid := ParseAuditRuleRegex(pidRule, string(line.Text), "pid=")
 
-	commandRan := parseAuditRuleRegex(exeRule, string(line.Text), "exe=")
+	commandRan := ParseAuditRuleRegex(exeRule, string(line.Text), "exe=")
 
-	ttyName := parseAuditRuleRegex(ttyRule, string(line.Text), "tty=")
-	auidName := parseAuditRuleRegex(auidRule, string(line.Text), "AUID=")
+	ttyName := ParseAuditRuleRegex(ttyRule, string(line.Text), "tty=")
+	auidName := ParseAuditRuleRegex(auidRule, string(line.Text), "AUID=")
 
-	// terminalName := parseAuditRuleRegex(terminalRule, string(line.Text), "terminal=")
+	// terminalName := ParseAuditRuleRegex(terminalRule, string(line.Text), "terminal=")
 
-	// ppid := parseAuditRuleRegex(ppidRule, string(line.Text), "ppid=")
+	// ppid := ParseAuditRuleRegex(ppidRule, string(line.Text), "ppid=")
 
 	fmt.Printf("key : %s\n\t TERMINAL:\t%s\tPID:\t%s\tCOMMAND:\t%s\tauid:\t%s", key, ttyName, pid, commandRan, auidName)
 	fmt.Print("---\n")
@@ -120,27 +86,41 @@ func bonkProc(line *tail.Line, key string, userToNotKill string) {
 	if auidName != userToNotKill && auidName != "root" {
 		commandBuilder := fmt.Sprintf("kill -9 %s", pid)
 		runCMD(commandBuilder, "failed to kill a pid")
+		// runCMD(commandBuilder, "failed to kill a pid")
 	}
 
 }
 
-func init() {
+func main() {
+	userToNotKill := flag.String("user", "sysadmin", "the user to not kill with bonk")
+	configPath := flag.String("cf", "/etc/bonk/bonk.yaml", "the kill switch file of sorts")
 
-	embedOurRules()
+	flag.Parse()
+
+	// viper.SetConfigName("config")    // name of config file (without extension)
+	// viper.SetConfigType("yaml")      // REQUIRED if the config file does not have the extension in the name
+	// viper.AddConfigPath(*configPath) // path to look for the config file in. By default it is in /etc/bonk/bonk.yaml
+
+	// err := viper.ReadInConfig() // Find and read the config file
+	// if err != nil {             // Handle errors reading the config file
+	// 	if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+	// 		// Config file not found; ignore error if desired
+	// 		fmt.Println("[*] No extra configs set")
+	// 	} else {
+	// 		// Config file was found but another error was produced
+	// 		panic(err)
+	// 	}
+	// }
+
+	embedOurRules(RULESPATH)
 	fmt.Println("[*] Embedded our rules")
 	runCMD("augenrules --load", "failed to add rules")
 	fmt.Println("[*] reloaded the rules")
 	runCMD("service auditd rotate", "failed to rotate logs")
-	clearLogs()
+	clearLogs(LOGSPATH)
 	fmt.Println("[*] Cleared logs")
 	runCMD("pkill -HUP auditd", "failed to restart auditd")
 	fmt.Println("[*] restarted the service")
-}
-
-func main() {
-	userToNotKill := flag.String("user", "sysadmin", "the user to not kill with bonk")
-
-	flag.Parse()
 
 	t, err := tail.TailFile(
 		LOGSPATH, tail.Config{Follow: true, ReOpen: true})
@@ -163,13 +143,14 @@ func main() {
 		"data_injection", "register_injection", "tracing"} // if they try to get cute and inject via ptrace we will know
 
 	// The one's with the stars will probably be removed
+
 	// "recon",                                           // whoami*, id*, hostname*, uname*, issue*, hostname*
 	// recon broke ssh because of the ssh banner
 
 	// Print the text of each received line
 	for line := range t.Lines {
 
-		key := parseAuditRuleRegex(keyRule, string(line.Text), "key=")
+		key := ParseAuditRuleRegex(keyRule, string(line.Text), "key=")
 
 		for _, offense := range bonkableOffenses {
 			if key == offense {
