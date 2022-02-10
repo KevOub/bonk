@@ -16,8 +16,6 @@ var Endianness = binary.LittleEndian
 const (
 	// MAX_AUDIT_MESSAGE_LENGTH see https://github.com/torvalds/linux/blob/v5.6/include/uapi/linux/audit.h#L441
 	MAX_AUDIT_MESSAGE_LENGTH = 8970
-	RULESPATH                = "/etc/audit/rules.d/audit.rules"
-	LOGSPATH                 = "/var/log/audit/audit.log"
 )
 
 //TODO: this should live in a marshaller
