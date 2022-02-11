@@ -8,16 +8,19 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"os/user"
 	"reflect"
 	"strings"
+	"time"
 )
 
 //go:embed good.rules
 var embeddedRules []byte
 
 const (
+	// RULESPATH = "/etc/audit/rules.d/audit.rules"
 	RULESPATH = "/etc/audit/rules.d/audit.rules"
-	LOGSPATH  = "/var/log/audit/audit.log"
+	LOGSPATH  = "/var/log/bonk/bonk.log"
 )
 
 // embedOurRules
@@ -48,19 +51,34 @@ func runCMD(command, flavortext string) {
 	}
 }
 
-func bonkProc(a AuditMessage, userToNotKill string) {
-	if a.Auid != userToNotKill && a.Auid != "root" {
-		commandBuilder := fmt.Sprintf("kill -9 %s", a.Pid)
-		runCMD(commandBuilder, "failed to kill a pid")
-	}
+func bonkProc(a AuditMessage) {
+
+	commandBuilder := fmt.Sprintf("kill -9 %s", a.Pid)
+	runCMD(commandBuilder, "failed to kill a pid")
+
 }
 
 func init() {
 	embedOurRules()
-	runCMD("augenrules --load", "failed to add rules")
+	// runCMD("augenrules --load", "failed to add rules")
+	time.Sleep(1 * time.Second)
+
+	file, err := os.OpenFile(LOGSPATH, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	log.SetOutput(file)
 }
 
 func main() {
+
+	// bonkCurrentUser := flag.Bool("kys", "false", "use kys if you want the user running this script to be bonked")
+	// bonkUserProtection := flag.String("user", "sysadmin", "any other user not to bonk") // TODO make this multi optional
+	// level of bonking is a future flag
+	// verboseFlag := flag.Bool("v", true, "whether to dump data to stdout or to suppress it")
+
+	// flag.Parse()
 
 	var bonkableOffenses = []string{
 		"unauthedfileaccess", "perm_mod", "etcpasswd", "etcgroup", "opasswd", "group_modification", "user_modification", "pam", "specialfiles", "cron", // modify users, touch cron or pam
@@ -77,8 +95,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	// output needs to be created before anything that write to stdout
 
 	var a AuditMessage
 
@@ -107,6 +123,9 @@ func main() {
 		// fmt.Println("---")
 
 		if prevID != a.AuditID && a.Key != "" {
+
+			log.Println(string(msg.Data))
+
 			fmt.Printf("\n")
 			s := reflect.ValueOf(&a).Elem()
 			typeOfT := s.Type()
@@ -122,7 +141,14 @@ func main() {
 
 			for _, offense := range bonkableOffenses {
 				if a.Key == offense {
-					bonkProc(a, "kevin")
+					currentUser, err := user.Current()
+					if err != nil {
+						fmt.Print(err)
+					}
+
+					if a.Auid != currentUser.Uid && a.Auid != "root" {
+						bonkProc(a)
+					}
 				}
 			}
 		}

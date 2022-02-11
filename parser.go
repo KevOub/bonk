@@ -1,9 +1,8 @@
 package main
 
 import (
-	"fmt"
 	"log"
-	"os/exec"
+	"os/user"
 	"regexp"
 	"strings"
 )
@@ -26,40 +25,40 @@ var (
 
 type AuditMessage struct {
 	// msg=audit(1364481363.243:24287):
-	AuditIDRaw string
-	AuditID    string
-	Timestamp  string
+	AuditIDRaw string `json:"auditIDRaw"`
+	AuditID    string `json:"auditID"`
+	Timestamp  string `json:"timestamp"`
 
-	// syscall=2
-	Syscall int
+	// syscall=2 (not used)
+	Syscall int `json:"Syscall"`
 	// success=no
-	Success bool
+	Success bool `json:"success"`
 
-	// terminal=/dev/pts/0
-	Terminal string
+	// terminal=/dev/pts/0 (not found often ???)
+	Terminal string `json:"terminal"`
 	// tty=pts0
-	Tty string
+	Tty string `json:"tty"`
 	// exe="/bin/cat"
-	Exe string
+	Exe string `json:"exe"`
 	// key="sshd_config"
-	Key string
+	Key string `json:"key"`
 
 	// should be self explanatory
-	Pid               string
-	PPid              string
-	Auid              string
-	AuidHumanReadable string
+	Pid               string `json:"pid"`
+	PPid              string `json:"ppid"`
+	Auid              string `json:"auid"`
+	AuidHumanReadable string `json:"auid_hr"` //human readable
 
 	// name="/home/kevin"
-	Name string
+	Name string `json:"name"`
 
 	// proctile=636174002F6574632F7373682F737368645F636F6E666967
-	Proctile              string
-	ProctileHumanreadable string
+	Proctile              string `json:"-"`
+	ProctileHumanreadable string `json:"proctitle"`
 
 	// Finished is the flag to say that it is done processing
 	// Extras
-	Finished bool
+	Finished bool `json:"-"`
 }
 
 func (a *AuditMessage) InitAuditMessage(line string) {
@@ -73,6 +72,7 @@ func (a *AuditMessage) InitAuditMessage(line string) {
 	}
 	// fmt.Printf("%s\t%s\n", a.Timestamp, a.AuditID)
 
+	// gross code. Take the regex from above along with the line and the key to remove
 	a.Terminal = ParseAuditRuleRegex(terminalRule, line, "terminal=")
 	a.Tty = ParseAuditRuleRegex(ttyRule, line, "tty=")
 	a.Exe = ParseAuditRuleRegex(exeRule, line, "exe=")
@@ -82,19 +82,13 @@ func (a *AuditMessage) InitAuditMessage(line string) {
 
 	a.Auid = ParseAuditRuleRegex(auidRule, line, "auid=")
 	if a.Auid != "" {
-		commandBuilder := fmt.Sprintf("id -un %s", a.Auid)
 
-		byteCommand := strings.Split(commandBuilder, " ") // splits into bytes seperated by spaces
-		bytes, err := exec.Command(byteCommand[0], byteCommand[1:]...).Output()
+		user, err := user.LookupId(a.Auid)
 		if err != nil {
-			if _, ok := err.(*exec.ExitError); !ok {
-				log.Fatalf("%s\n%s", "failed to get username", err)
-			} else {
-				fmt.Print(err)
-			}
+			log.Println(err)
+		} else {
+			a.AuidHumanReadable = user.Username
 		}
-		a.AuidHumanReadable = string(bytes)
-
 	}
 	a.Name = ParseAuditRuleRegex(nameRule, line, "name=")
 	a.Proctile = ParseAuditRuleRegex(proctileRule, line, "proctitle=")
