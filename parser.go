@@ -23,7 +23,7 @@ var (
 	proctileRule = regexp.MustCompile(`proctitle=(([\w].?)+)`)
 )
 
-type AuditMessage struct {
+type AuditMessageBonk struct {
 	// msg=audit(1364481363.243:24287):
 	AuditIDRaw string `json:"auditIDRaw"`
 	AuditID    string `json:"auditID"`
@@ -61,7 +61,7 @@ type AuditMessage struct {
 	Finished bool `json:"-"`
 }
 
-func (a *AuditMessage) InitAuditMessage(line string) {
+func (a *AuditMessageBonk) InitAuditMessage(line string) {
 	a.AuditIDRaw = ParseAuditRuleRegex(msgRule, line, "")
 
 	if a.AuditIDRaw != "" && len(a.AuditIDRaw) > 25 {
