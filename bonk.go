@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"reflect"
 	"strings"
 
 	"github.com/nxadm/tail"
@@ -92,8 +93,8 @@ func bonkProc(line *tail.Line, key string, userToNotKill string) {
 }
 
 func main() {
-	userToNotKill := flag.String("user", "sysadmin", "the user to not kill with bonk")
-	configPath := flag.String("cf", "/etc/bonk/bonk.yaml", "the kill switch file of sorts")
+	// userToNotKill := flag.String("user", "sysadmin", "the user to not kill with bonk")
+	// configPath := flag.String("cf", "/etc/bonk/bonk.yaml", "the kill switch file of sorts")
 
 	flag.Parse()
 
@@ -131,32 +132,53 @@ func main() {
 	// extra line just to print bonk boi
 	fmt.Println(string(bonkArt))
 
-	var bonkableOffenses = []string{
-		"unauthedfileaccess", "perm_mod", "etcpasswd", "etcgroup", "opasswd", "group_modification", "user_modification", "pam", "specialfiles", "cron", // modify users, touch cron or pam
-		"sshd", "systemd", // touch systemd or ssh config files bonk
-		"power",                                           // do not turn off our computers
-		"priv_esc",                                        // su, sudo, sudoers, sudoers.d
-		"susp_activity",                                   // wget, curl, base64, nc, netcat, ssh*, scp*, sftp*, ftp*, socat, wireshark, tshark, rawshark, rdesktop, nmap
-		"sbin_susp",                                       // iptables, ip6tables, ifconfig*, arptables*,tcpdump, ufw*...
-		"shell_profiles",                                  // modifying any of these: /etc/profile.d/ /etc/profile /etc/shells  /etc/bashrc /etc/csh.cshrc /etc/csh.login /etc/fish/ /etc/zsh/
-		"software_mgmt",                                   // apt -> dnf -> yum -> dpkg -> snap -> pip3* , all killed
-		"data_injection", "register_injection", "tracing"} // if they try to get cute and inject via ptrace we will know
+	// var bonkableOffenses = []string{
+	// 	"unauthedfileaccess", "perm_mod", "etcpasswd", "etcgroup", "opasswd", "group_modification", "user_modification", "pam", "specialfiles", "cron", // modify users, touch cron or pam
+	// 	"sshd", "systemd", // touch systemd or ssh config files bonk
+	// 	"power",                                           // do not turn off our computers
+	// 	"priv_esc",                                        // su, sudo, sudoers, sudoers.d
+	// 	"susp_activity",                                   // wget, curl, base64, nc, netcat, ssh*, scp*, sftp*, ftp*, socat, wireshark, tshark, rawshark, rdesktop, nmap
+	// 	"sbin_susp",                                       // iptables, ip6tables, ifconfig*, arptables*,tcpdump, ufw*...
+	// 	"shell_profiles",                                  // modifying any of these: /etc/profile.d/ /etc/profile /etc/shells  /etc/bashrc /etc/csh.cshrc /etc/csh.login /etc/fish/ /etc/zsh/
+	// 	"software_mgmt",                                   // apt -> dnf -> yum -> dpkg -> snap -> pip3* , all killed
+	// 	"data_injection", "register_injection", "tracing"} // if they try to get cute and inject via ptrace we will know
 
 	// The one's with the stars will probably be removed
 
 	// "recon",                                           // whoami*, id*, hostname*, uname*, issue*, hostname*
 	// recon broke ssh because of the ssh banner
 
+	var a AuditMessage
+	var prevID string
 	// Print the text of each received line
 	for line := range t.Lines {
-
-		key := ParseAuditRuleRegex(keyRule, string(line.Text), "key=")
-
-		for _, offense := range bonkableOffenses {
-			if key == offense {
-				bonkProc(line, key, *userToNotKill)
-			}
+		a.InitAuditMessage(line.Text)
+		// fmt.Println(line.Text)
+		if prevID == "" {
+			prevID = a.AuditID
 		}
+
+		if prevID != a.AuditID {
+			fmt.Printf("\n")
+			s := reflect.ValueOf(&a).Elem()
+			typeOfT := s.Type()
+
+			fmt.Printf("\n%s\n", line.Text)
+			for i := 0; i < s.NumField(); i++ {
+				f := s.Field(i)
+				fmt.Printf("%d: %s %s = %v\n", i,
+					typeOfT.Field(i).Name, f.Type(), f.Interface())
+			}
+
+		}
+
+		// key := ParseAuditRuleRegex(keyRule, string(line.Text), "key=")
+
+		// for _, offense := range bonkableOffenses {
+		// 	if a.Key == offense {
+		// 		bonkProc(line, a.Key, *userToNotKill)
+		// 	}
+		// }
 
 	}
 
