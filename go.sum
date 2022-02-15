@@ -1,6 +1,8 @@
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
+github.com/elastic/go-libaudit v0.4.0 h1:pxLCycMJKW91W8ZmZT74DQmryTZuXryKESo6sXdu1XY=
+github.com/elastic/go-libaudit v0.4.0/go.mod h1:lNJ7gX+arohEQTwqinAc8xycVuFNqsaunba1mwcBdvE=
 github.com/elastic/go-libaudit/v2 v2.2.0 h1:TY3FDpG4Zr9Qnv6KYW6olYr/U+nfu0rD2QAbv75VxMQ=
 github.com/elastic/go-libaudit/v2 v2.2.0/go.mod h1:MM/l/4xV7ilcl+cIblL8Zn448J7RZaDwgNLE4gNKYPg=
 github.com/pkg/errors v0.8.1-0.20170505043639-c605e284fe17/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
