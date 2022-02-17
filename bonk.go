@@ -2,15 +2,17 @@ package main
 
 import (
 	_ "embed"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
-	"reflect"
+	"os/user"
 	"strings"
 
 	"github.com/nxadm/tail"
+	"github.com/sirupsen/logrus"
 )
 
 var (
@@ -65,63 +67,56 @@ func clearLogs(logsPath string) {
 	f.Close()
 }
 
-func bonkProc(line *tail.Line, key string, userToNotKill string) {
-	pid := ParseAuditRuleRegex(pidRule, string(line.Text), "pid=")
-
-	commandRan := ParseAuditRuleRegex(exeRule, string(line.Text), "exe=")
-
-	ttyName := ParseAuditRuleRegex(ttyRule, string(line.Text), "tty=")
-	auidName := ParseAuditRuleRegex(auidRule, string(line.Text), "AUID=")
-
-	// terminalName := ParseAuditRuleRegex(terminalRule, string(line.Text), "terminal=")
-
-	// ppid := ParseAuditRuleRegex(ppidRule, string(line.Text), "ppid=")
-
-	fmt.Printf("key : %s\n\t TERMINAL:\t%s\tPID:\t%s\tCOMMAND:\t%s\tauid:\t%s", key, ttyName, pid, commandRan, auidName)
-	fmt.Print("---\n")
-
-	/*
-	   AUID:
-	   Records the Audit user ID. This ID is assigned to a user upon login and is inherited by every process even when the user's identity changes (for example, by switching user accounts with su - john).
-	*/
-	if auidName != userToNotKill && auidName != "root" {
-		commandBuilder := fmt.Sprintf("kill -9 %s", pid)
-		runCMD(commandBuilder, "failed to kill a pid")
-		// runCMD(commandBuilder, "failed to kill a pid")
+func PrettyStruct(data interface{}) (string, error) {
+	val, err := json.MarshalIndent(data, "", "    ")
+	if err != nil {
+		return "", err
 	}
+	return string(val), nil
+}
 
+var fancylog = logrus.New()
+
+func init() {
+	// Log as JSON instead of the default ASCII formatter.
+	fancylog.SetFormatter(&logrus.TextFormatter{})
+
+	// Output to stdout instead of the default stderr
+	// Can be any io.Writer, see below for File example
+	fancylog.SetOutput(os.Stdout)
+
+	// Only log the warning severity or above.
+	fancylog.SetLevel(logrus.WarnLevel)
 }
 
 func main() {
 	// userToNotKill := flag.String("user", "sysadmin", "the user to not kill with bonk")
 	// configPath := flag.String("cf", "/etc/bonk/bonk.yaml", "the kill switch file of sorts")
+	// logPath := flag.String("out", "bonk.log", "the log file to write to")
+	loadTheRules := flag.Bool("l", false, "whether to embed the files")
+	rotateLogs := flag.Bool("r", false, "rotate logs")
+	safeUser := flag.String("u", "sysadmin", "the user to *NOT* kill")
 
 	flag.Parse()
 
-	// viper.SetConfigName("config")    // name of config file (without extension)
-	// viper.SetConfigType("yaml")      // REQUIRED if the config file does not have the extension in the name
-	// viper.AddConfigPath(*configPath) // path to look for the config file in. By default it is in /etc/bonk/bonk.yaml
+	log.SetOutput(logrus.New().Writer())
 
-	// err := viper.ReadInConfig() // Find and read the config file
-	// if err != nil {             // Handle errors reading the config file
-	// 	if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-	// 		// Config file not found; ignore error if desired
-	// 		fmt.Println("[*] No extra configs set")
-	// 	} else {
-	// 		// Config file was found but another error was produced
-	// 		panic(err)
-	// 	}
-	// }
+	if *loadTheRules {
+		embedOurRules(RULESPATH)
+		fmt.Println("[*] Embedded our rules")
+		runCMD("augenrules --load", "failed to add rules")
+		fmt.Println("[*] reloaded the rules")
+		// clearLogs(LOGSPATH)
+		runCMD("pkill -HUP auditd", "failed to restart auditd")
+		fmt.Println("[*] restarted the service")
 
-	embedOurRules(RULESPATH)
-	fmt.Println("[*] Embedded our rules")
-	runCMD("augenrules --load", "failed to add rules")
-	fmt.Println("[*] reloaded the rules")
-	runCMD("service auditd rotate", "failed to rotate logs")
-	clearLogs(LOGSPATH)
-	fmt.Println("[*] Cleared logs")
-	runCMD("pkill -HUP auditd", "failed to restart auditd")
-	fmt.Println("[*] restarted the service")
+	}
+
+	if *rotateLogs {
+		runCMD("service auditd rotate", "failed to rotate logs")
+		clearLogs(LOGSPATH)
+		fmt.Println("[*] Cleared logs")
+	}
 
 	t, err := tail.TailFile(
 		LOGSPATH, tail.Config{Follow: true, ReOpen: true})
@@ -132,16 +127,16 @@ func main() {
 	// extra line just to print bonk boi
 	fmt.Println(string(bonkArt))
 
-	// var bonkableOffenses = []string{
-	// 	"unauthedfileaccess", "perm_mod", "etcpasswd", "etcgroup", "opasswd", "group_modification", "user_modification", "pam", "specialfiles", "cron", // modify users, touch cron or pam
-	// 	"sshd", "systemd", // touch systemd or ssh config files bonk
-	// 	"power",                                           // do not turn off our computers
-	// 	"priv_esc",                                        // su, sudo, sudoers, sudoers.d
-	// 	"susp_activity",                                   // wget, curl, base64, nc, netcat, ssh*, scp*, sftp*, ftp*, socat, wireshark, tshark, rawshark, rdesktop, nmap
-	// 	"sbin_susp",                                       // iptables, ip6tables, ifconfig*, arptables*,tcpdump, ufw*...
-	// 	"shell_profiles",                                  // modifying any of these: /etc/profile.d/ /etc/profile /etc/shells  /etc/bashrc /etc/csh.cshrc /etc/csh.login /etc/fish/ /etc/zsh/
-	// 	"software_mgmt",                                   // apt -> dnf -> yum -> dpkg -> snap -> pip3* , all killed
-	// 	"data_injection", "register_injection", "tracing"} // if they try to get cute and inject via ptrace we will know
+	var bonkableOffenses = []string{
+		"unauthedfileaccess", "perm_mod", "etcpasswd", "etcgroup", "opasswd", "group_modification", "user_modification", "pam", "specialfiles", "cron", // modify users, touch cron or pam
+		"sshd", "systemd", // touch systemd or ssh config files bonk
+		"power",                                           // do not turn off our computers
+		"priv_esc",                                        // su, sudo, sudoers, sudoers.d
+		"susp_activity",                                   // wget, curl, base64, nc, netcat, ssh*, scp*, sftp*, ftp*, socat, wireshark, tshark, rawshark, rdesktop, nmap
+		"sbin_susp",                                       // iptables, ip6tables, ifconfig*, arptables*,tcpdump, ufw*...
+		"shell_profiles",                                  // modifying any of these: /etc/profile.d/ /etc/profile /etc/shells  /etc/bashrc /etc/csh.cshrc /etc/csh.login /etc/fish/ /etc/zsh/
+		"software_mgmt",                                   // apt -> dnf -> yum -> dpkg -> snap -> pip3* , all killed
+		"data_injection", "register_injection", "tracing"} // if they try to get cute and inject via ptrace we will know
 
 	// The one's with the stars will probably be removed
 
@@ -158,27 +153,49 @@ func main() {
 			prevID = a.AuditID
 		}
 
-		if prevID != a.AuditID {
-			fmt.Printf("\n")
-			s := reflect.ValueOf(&a).Elem()
-			typeOfT := s.Type()
+		offensive := false
+		for _, offense := range bonkableOffenses {
+			if a.Key == offense {
+				offensive = true
+				name, err := user.Lookup(*safeUser)
+				if err != nil {
+					log.Fatal(err)
+				}
 
-			fmt.Printf("\n%s\n", line.Text)
-			for i := 0; i < s.NumField(); i++ {
-				f := s.Field(i)
-				fmt.Printf("%d: %s %s = %v\n", i,
-					typeOfT.Field(i).Name, f.Type(), f.Interface())
+				if a.Auid != name.Uid && a.AuidHumanReadable != "root" && a.AuidHumanReadable != "unset" {
+					commandBuilder := fmt.Sprintf("kill -9 %s", a.Pid)
+					runCMD(commandBuilder, "failed to kill a pid")
+					logrus.WithFields(logrus.Fields{
+						"cmd":      a.Exe,
+						"cmd_full": a.Proctile,
+						"time":     a.Timestamp,
+						"key":      a.Key,
+						"user":     a.AuidHumanReadable,
+					}).Warn("Bonked!")
+				} else {
+					logrus.WithFields(logrus.Fields{
+						"cmd":      a.Exe,
+						"cmd_full": a.Proctile,
+						"time":     a.Timestamp,
+						"key":      a.Key,
+						"user":     a.AuidHumanReadable,
+					}).Info("")
+
+				}
+
 			}
-
 		}
 
-		// key := ParseAuditRuleRegex(keyRule, string(line.Text), "key=")
+		if !offensive {
+			logrus.WithFields(logrus.Fields{
+				"cmd":      a.Exe,
+				"cmd_full": a.Proctile,
+				"time":     a.Timestamp,
+				"key":      a.Key,
+				"user":     a.AuidHumanReadable,
+			}).Info("info")
 
-		// for _, offense := range bonkableOffenses {
-		// 	if a.Key == offense {
-		// 		bonkProc(line, a.Key, *userToNotKill)
-		// 	}
-		// }
+		}
 
 	}
 
