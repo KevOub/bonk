@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bufio"
+	"embed"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/elastic/go-libaudit/rule"
 	"github.com/elastic/go-libaudit/rule/flags"
@@ -17,10 +20,13 @@ import (
 var (
 	fs          = flag.NewFlagSet("audit", flag.ExitOnError)
 	diag        = fs.String("diag", "logs", "dump raw information from kernel to file")
+	mode        = fs.String("mode", "load", "[load/bonk] choose between\n>'load' (load rules)\n>'mode' (bonk processes) ")
 	rate        = fs.Uint("rate", 0, "rate limit in kernel (default 0, no rate limit)")
 	backlog     = fs.Uint("backlog", 8192, "backlog limit")
 	immutable   = fs.Bool("immutable", false, "make kernel audit settings immutable (requires reboot to undo)")
 	receiveOnly = fs.Bool("ro", false, "receive only using multicast, requires kernel 3.16+")
+	//go:embed good.rules
+	res embed.FS
 )
 
 // // go:embed 43-module-load.rules
@@ -40,33 +46,27 @@ const (
 	LOGSPATH  = "/var/log/bonk/bonk.log"
 )
 
-// embedOurRules
-// func embedOurRules() {
-// 	// os.O_TRUNC empties the file on opening
-// 	// currentRules, err := os.OpenFile(RULESPATH, os.O_TRUNC, 0777)
-// 	currentRules, err := os.OpenFile(RULESPATH, os.O_CREATE|os.O_WRONLY|os.O_APPEND|os.O_TRUNC, 0777)
-// 	if err != nil {
-// 		log.Fatalf("Failed to open operating system rules.\n%s", err)
-// 	}
-// 	defer currentRules.Close()
+func ruleAddWrapper(rule2add string, r *libaudit.AuditClient) error {
 
-// 	_, err = currentRules.Write(embeddedRules)
-// 	if err != nil {
-// 		log.Fatalf("Failed to open operating system rules.\n%s", err)
-// 	}
-// }
+	ru, err := flags.Parse(rule2add)
+	if err != nil {
+		return err
+	}
 
-// func runCMD(command, flavortext string) {
-// 	byteCommand := strings.Split(command, " ") // splits into bytes seperated by spaces
-// 	_, err := exec.Command(byteCommand[0], byteCommand[1:]...).Output()
-// 	if err != nil {
-// 		if _, ok := err.(*exec.ExitError); !ok {
-// 			log.Fatalf("%s\n%s", flavortext, err)
-// 		} else {
-// 			fmt.Print(err)
-// 		}
-// 	}
-// }
+	// convert
+	actualBytes, err := rule.Build(ru)
+	if err != nil {
+		return err
+	}
+
+	r.WaitForPendingACKs()
+
+	if err = r.AddRule([]byte(actualBytes)); err != nil {
+		return fmt.Errorf("failed to add rule:\n %w", err)
+	}
+
+	return nil
+}
 
 func read() error {
 	if os.Geteuid() != 0 {
@@ -134,87 +134,55 @@ func read() error {
 			}
 		}
 
-		if status.Enabled != 2 {
-			log.Printf("setting kernel settings as immutable")
-			if err = client.SetImmutable(libaudit.NoWait); err != nil {
-				return fmt.Errorf("failed to set kernel as immutable: %w", err)
-			}
-		}
+		// do **not** want to enable immutable kernel **yet**
+		// if status.Enabled != 2 {
+		// 	log.Printf("setting kernel settings as immutable")
+		// 	if err = client.SetImmutable(libaudit.NoWait); err != nil {
+		// 		return fmt.Errorf("failed to set kernel as immutable: %w", err)
+		// 	}
+		// }
 
 		log.Printf("sending message to kernel registering our PID (%v) as the audit daemon", os.Getpid())
 		if err = client.SetPID(libaudit.NoWait); err != nil {
 			return fmt.Errorf("failed to set audit PID: %w", err)
 		}
 
-		rule2add := `-a never,exit -F arch=x86_64 -S adjtimex -F auid=unset -F uid=20 -F subj_type=chronyd_t1`
-
-		r, err := flags.Parse(rule2add)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		fmt.Println(client.GetStatus())
-
-		// convert
-		actualBytes, err := rule.Build(r)
-		if err != nil {
-			log.Fatal("rule:", rule2add, "error:", err)
-		}
-
-		if rules, err := client.GetRules(); err != nil {
-			return fmt.Errorf("failed to add rule:\n %w", err)
-		} else {
-			fmt.Println(rules)
-		}
-
-		if err = client.AddRule([]byte(actualBytes)); err != nil {
-			return fmt.Errorf("failed to add rule:\n %w", err)
-		}
 	}
 
-	// logic to embed our rules
-	// data, err := embededRules.Open("43-module-load.rules")
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
+	if *mode == "load" {
+		return load(client)
+	} else if *mode == "bonk" {
+		return receive(client)
+	} else {
+		flag.PrintDefaults()
+		return fmt.Errorf("please specify which mode to use")
+	}
 
-	// data, err := os.Open("good.rules")
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-
-	// client.DeleteRules() // funny stuff. nuke rules for sanity
-
-	// scanner := bufio.NewScanner(data)
-	// var test string
-	// var read_line []byte
-	// for scanner.Scan() {
-	// 	test = scanner.Text()
-	// 	read_line = []byte(strings.TrimSuffix(test, "\n"))
-	// 	break
-	// }
-	// err = client.AddRule(read_line)
-
-	// for scanner.Scan() {
-	// 	err := client.AddRule(scanner.Bytes())
-
-	// }
-
-	// test, err := client.GetRules()
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-	// fmt.Println(test)
-
-	return receive(client)
 }
 
+// command to load our rules
+func load(r *libaudit.AuditClient) error {
+	data, _ := res.Open("good.rules")
+
+	scanner := bufio.NewScanner(data)
+	for scanner.Scan() {
+		if rule2add := scanner.Text(); !strings.HasPrefix(rule2add, "#") && rule2add != "" {
+			fmt.Printf("rule> %s\n", rule2add)
+			err := ruleAddWrapper(rule2add, r)
+			// r.WaitForPendingACKs()
+			if err != nil {
+				fmt.Printf("error> %s\n", err)
+			}
+
+		}
+
+	}
+	fmt.Println(r.GetRules())
+	return nil
+}
+
+// watch output
 func receive(r *libaudit.AuditClient) error {
-	// var a AuditMessageBonk
-	// err := r.AddRule([]byte(`-a never,exit -F arch=b64 -S adjtimex -F auid=unset -F uid=20 -F subj_type=chronyd_t`))
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
 
 	for {
 		rawEvent, err := r.Receive(false)
@@ -229,7 +197,11 @@ func receive(r *libaudit.AuditClient) error {
 		}
 
 		// THIS IS THE BONK LOGIC
-		fmt.Printf("type=%v msg=%v\n", rawEvent.Type, string(rawEvent.Data))
+		// fmt.Printf("type=%v msg=%v\n", rawEvent.Type, string(rawEvent.Data))
+
+		test, _ := auparse.Parse(rawEvent.Type, string(rawEvent.Data))
+		fmt.Printf("record>\n%s\n", test.RawData)
+
 		// a.InitAuditMessage(string(rawEvent.Data))
 		// fmt.Printf("---\n%s\n---", a.Auid)
 	}
