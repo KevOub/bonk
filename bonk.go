@@ -9,22 +9,31 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"strings"
+	"syscall"
 
 	"github.com/elastic/go-libaudit/rule"
 	"github.com/elastic/go-libaudit/rule/flags"
 	"github.com/elastic/go-libaudit/v2"
 	"github.com/elastic/go-libaudit/v2/auparse"
+	"github.com/fatih/color"
 )
 
 var (
-	fs          = flag.NewFlagSet("audit", flag.ExitOnError)
-	diag        = fs.String("diag", "logs", "dump raw information from kernel to file")
-	mode        = fs.String("mode", "load", "[load/bonk] choose between\n>'load' (load rules)\n>'mode' (bonk processes) ")
-	rate        = fs.Uint("rate", 0, "rate limit in kernel (default 0, no rate limit)")
-	backlog     = fs.Uint("backlog", 8192, "backlog limit")
-	immutable   = fs.Bool("immutable", false, "make kernel audit settings immutable (requires reboot to undo)")
-	receiveOnly = fs.Bool("ro", false, "receive only using multicast, requires kernel 3.16+")
+	fs           = flag.NewFlagSet("audit", flag.ExitOnError)
+	diag         = fs.String("diag", "logs", "dump raw information from kernel to file")
+	mode         = fs.String("mode", "load", "[load/bonk] choose between\n>'load' (load rules)\n>'mode' (bonk processes) ")
+	rate         = fs.Uint("rate", 0, "rate limit in kernel (default 0, no rate limit)")
+	backlog      = fs.Uint("backlog", 8192, "backlog limit")
+	immutable    = fs.Bool("immutable", false, "make kernel audit settings immutable (requires reboot to undo)")
+	receiveOnly  = fs.Bool("ro", false, "receive only using multicast, requires kernel 3.16+")
+	verbose      = fs.Bool("v", true, "whether to print to stdout or not")
+	colorEnabled = fs.Bool("color", true, "whether to use color or not")
+	ptraceKill   = fs.Bool("ptrace", false, "use ptrace trolling to kill process rudely")
+	configPath   = fs.String("config", "config.json", "where custom config is located")
+	showInfo     = fs.Bool("info", true, "whether to show informational warnings or just bonks")
+	cf           = Config{}
 	//go:embed good.rules
 	res embed.FS
 )
@@ -32,19 +41,40 @@ var (
 // // go:embed 43-module-load.rules
 // var embededRules embed.FS
 
+const (
+	// RULESPATH = "/etc/audit/rules.d/audit.rules"
+	CONFIGPATH = "/var/bonk/config.json"
+	// RULESPATH = "/etc/audit/rules.d/audit.rules"
+	LOGSPATH = "/var/log/bonk/bonk.log"
+)
+
 func main() {
 	fs.Parse(os.Args[1:])
+	// color magic
+	if !*colorEnabled {
+		color.NoColor = true
+	}
+
+	// set up logging
+	logFile, err := os.OpenFile(LOGSPATH, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
+	if err != nil {
+		panic(err)
+	}
+	// only log when in bonk mode
+	if *verbose && *mode == "bonk" {
+		mw := io.MultiWriter(os.Stdout, logFile)
+		log.SetOutput(mw)
+	} else {
+		log.SetOutput(logFile)
+	}
+
+	// load configuration file
+	cf.Load(*configPath)
 
 	if err := read(); err != nil {
 		log.Fatalf("error: %v", err)
 	}
 }
-
-const (
-	// RULESPATH = "/etc/audit/rules.d/audit.rules"
-	RULESPATH = "/etc/audit/rules.d/audit.rules"
-	LOGSPATH  = "/var/log/bonk/bonk.log"
-)
 
 func ruleAddWrapper(rule2add string, r *libaudit.AuditClient) error {
 
@@ -101,11 +131,6 @@ func read() error {
 			return fmt.Errorf("failed to create audit client: %w", err)
 		}
 		defer client.Close()
-
-		// err = client.SetFailure(libaudit.SilentOnFailure, libaudit.NoWait)
-		// if err != nil {
-		// 	return fmt.Errorf("RAAA, %w", err)
-		// }
 
 		status, err := client.GetStatus()
 		if err != nil {
@@ -177,14 +202,104 @@ func load(r *libaudit.AuditClient) error {
 		}
 
 	}
+
+	for _, rule := range cf.Rules {
+		if strings.HasPrefix(rule, "#") && rule != "" {
+			err := ruleAddWrapper(rule, r)
+			// r.WaitForPendingACKs()
+			if err != nil {
+				fmt.Printf("error> %s\n", err)
+			}
+		}
+	}
+
 	fmt.Println(r.GetRules())
+	return nil
+}
+
+func runCMD(command, flavortext string) {
+	byteCommand := strings.Split(command, " ") // splits into bytes seperated by spaces
+	_, err := exec.Command(byteCommand[0], byteCommand[1:]...).Output()
+	if err != nil {
+		if _, ok := err.(*exec.ExitError); !ok {
+			log.Fatalf("%s\n%s", flavortext, err)
+		}
+	}
+}
+
+func bonkProc(a AuditMessageBonk) error {
+
+	var outMessage string
+	// if the offense is bonkable
+	if cf.IsBonkable(a.Key) {
+		// and the user is *not* allowed
+		if !cf.AllowedUser(a.Auid) {
+			// bonk the process!
+
+			// if *ptraceKill {
+			// 	go func() {
+			// 		/*
+			// 			DO NOT SCREW WITH THIS. THIS IS **EVIL** AND WILL BREAK THINGS
+			// 			YOU ARE INTERCEPTING THE PROCESSES WILLY NILLY IN GOROUTINES AND SEEING WHAT HAPPENS
+			// 			WHAT POSSIBLY COULD GO WRONG???
+			// 		*/
+			// 		pid2int, _ := strconv.Atoi(a.Pid)
+			// 		proc, _ := os.FindProcess(pid2int)
+			// 		syscall.PtraceAttach(proc.Pid)
+			// 		syscall.PtraceSyscall(proc.Pid, 0)
+			// 		time.Sleep(1 * time.Second)
+			// 		syscall.Wait4(proc.Pid, nil, 0, nil)
+			// 		syscall.PtraceDetach(proc.Pid)
+			// 		syscall.Kill(proc.Pid, syscall.SIGKILL)
+			// 	}()
+			// } else {
+			// commandBuilder := fmt.Sprintf("kill -9 %s", a.Pid)
+			// runCMD(commandBuilder, "failed to kill a pid")
+			syscall.Kill(a.Pid, syscall.SIGKILL)
+
+			// }
+
+			outMessage = fmt.Sprintf("[%s] USER:%s\t;KEY %s\t; CMD: %s;\tCMD_F: %s;\t", color.RedString("BONK"),
+				color.RedString(a.AuidHumanReadable), color.RedString(a.Key),
+				color.RedString(a.Exe), color.RedString(a.Proctile),
+			)
+			log.Print(outMessage)
+
+		} else { // otherwise the user is allowed
+			outMessage = fmt.Sprintf("[%s] USER:%s\t;KEY %s\t; CMD: %s;\tCMD_F: %s;\t", color.HiMagentaString("CRIT"),
+				color.HiMagentaString(a.AuidHumanReadable), color.HiMagentaString(a.Key),
+				color.HiMagentaString(a.Exe), color.HiMagentaString(a.Proctile),
+			)
+			log.Print(outMessage)
+		}
+
+	} else {
+		// only log notable events
+		if a.Key != "" {
+			// then the message is not bonkable
+			if *showInfo {
+				outMessage = fmt.Sprintf("[%s] USER:%s\t;KEY %s\t; CMD: %s;\tCMD_F: %s;\t", color.BlueString("INFO"),
+					color.BlueString(a.AuidHumanReadable), color.BlueString(a.Key),
+					color.BlueString(a.Exe), color.BlueString(a.Proctile),
+				)
+				log.Print(outMessage)
+
+			}
+		}
+
+	}
+
 	return nil
 }
 
 // watch output
 func receive(r *libaudit.AuditClient) error {
 
+	var a AuditMessageBonk
+
+	// var outMessagePrev string
 	for {
+
 		rawEvent, err := r.Receive(false)
 		if err != nil {
 			return fmt.Errorf("receive failed: %w", err)
@@ -199,10 +314,23 @@ func receive(r *libaudit.AuditClient) error {
 		// THIS IS THE BONK LOGIC
 		// fmt.Printf("type=%v msg=%v\n", rawEvent.Type, string(rawEvent.Data))
 
-		test, _ := auparse.Parse(rawEvent.Type, string(rawEvent.Data))
-		fmt.Printf("record>\n%s\n", test.RawData)
+		if a.IsNewAuditID(string(rawEvent.Data)) {
+			// so this is a new audit message
+			// bonk the cumulative message
+			bonkProc(a)
+			// then make new audit message
+			a = AuditMessageBonk{}
+			err := a.InitAuditMessage(string(rawEvent.Data))
+			if err != nil && *verbose {
+				fmt.Print(err)
+			}
+		} else {
+			// otherwise just append to audit class
+			err := a.InitAuditMessage(string(rawEvent.Data))
+			if err != nil && *verbose {
+				fmt.Print(err)
+			}
+		}
 
-		// a.InitAuditMessage(string(rawEvent.Data))
-		// fmt.Printf("---\n%s\n---", a.Auid)
 	}
 }
