@@ -11,8 +11,8 @@ import (
 	"os/user"
 	"strings"
 
+	"github.com/fatih/color"
 	"github.com/nxadm/tail"
-	"github.com/sirupsen/logrus"
 )
 
 var (
@@ -75,31 +75,20 @@ func PrettyStruct(data interface{}) (string, error) {
 	return string(val), nil
 }
 
-var fancylog = logrus.New()
-
 func init() {
-	// Log as JSON instead of the default ASCII formatter.
-	fancylog.SetFormatter(&logrus.TextFormatter{})
 
-	// Output to stdout instead of the default stderr
-	// Can be any io.Writer, see below for File example
-	fancylog.SetOutput(os.Stdout)
-
-	// Only log the warning severity or above.
-	fancylog.SetLevel(logrus.WarnLevel)
 }
 
 func main() {
 	// userToNotKill := flag.String("user", "sysadmin", "the user to not kill with bonk")
 	// configPath := flag.String("cf", "/etc/bonk/bonk.yaml", "the kill switch file of sorts")
 	// logPath := flag.String("out", "bonk.log", "the log file to write to")
-	loadTheRules := flag.Bool("l", false, "whether to embed the files")
-	rotateLogs := flag.Bool("r", false, "rotate logs")
+	loadTheRules := flag.Bool("l", true, "whether to embed the files (true or false)")
+	rotateLogs := flag.Bool("r", false, "rotate logs (true or false)")
 	safeUser := flag.String("u", "sysadmin", "the user to *NOT* kill")
+	extremeMode := flag.Bool("e", false, "EXTREME MODE (true or false)")
 
 	flag.Parse()
-
-	log.SetOutput(logrus.New().Writer())
 
 	if *loadTheRules {
 		embedOurRules(RULESPATH)
@@ -127,24 +116,33 @@ func main() {
 	// extra line just to print bonk boi
 	fmt.Println(string(bonkArt))
 
-	var bonkableOffenses = []string{
-		"unauthedfileaccess", "perm_mod", "etcpasswd", "etcgroup", "opasswd", "group_modification", "user_modification", "pam", "specialfiles", "cron", // modify users, touch cron or pam
-		"sshd", "systemd", // touch systemd or ssh config files bonk
-		"power",                                           // do not turn off our computers
-		"priv_esc",                                        // su, sudo, sudoers, sudoers.d
-		"susp_activity",                                   // wget, curl, base64, nc, netcat, ssh*, scp*, sftp*, ftp*, socat, wireshark, tshark, rawshark, rdesktop, nmap
-		"sbin_susp",                                       // iptables, ip6tables, ifconfig*, arptables*,tcpdump, ufw*...
-		"shell_profiles",                                  // modifying any of these: /etc/profile.d/ /etc/profile /etc/shells  /etc/bashrc /etc/csh.cshrc /etc/csh.login /etc/fish/ /etc/zsh/
-		"software_mgmt",                                   // apt -> dnf -> yum -> dpkg -> snap -> pip3* , all killed
-		"data_injection", "register_injection", "tracing"} // if they try to get cute and inject via ptrace we will know
+	var bonkableOffenses = []string{}
+	if *extremeMode {
+		bonkableOffenses = []string{
+			"unauthedfileaccess", "perm_mod", "etcpasswd", "etcgroup", "opasswd", "group_modification", "user_modification", "pam", "specialfiles", "cron", // modify users, touch cron or pam
+			"sshd", "systemd", // touch systemd or ssh config files bonk
+			"power",                                           // do not turn off our computers
+			"priv_esc",                                        // su, sudo, sudoers, sudoers.d
+			"susp_activity",                                   // wget, curl, base64, nc, netcat, ssh*, scp*, sftp*, ftp*, socat, wireshark, tshark, rawshark, rdesktop, nmap
+			"sbin_susp",                                       // iptables, ip6tables, ifconfig*, arptables*,tcpdump, ufw*...
+			"shell_profiles",                                  // modifying any of these: /etc/profile.d/ /etc/profile /etc/shells  /etc/bashrc /etc/csh.cshrc /etc/csh.login /etc/fish/ /etc/zsh/
+			"software_mgmt",                                   // apt -> dnf -> yum -> dpkg -> snap -> pip3* , all killed
+			"data_injection", "register_injection", "tracing"} // if they try to get cute and inject via ptrace we will know
 
-	// The one's with the stars will probably be removed
+		// The one's with the stars will probably be removed
 
-	// "recon",                                           // whoami*, id*, hostname*, uname*, issue*, hostname*
-	// recon broke ssh because of the ssh banner
+		// "recon",                                           // whoami*, id*, hostname*, uname*, issue*, hostname*
+		// recon broke ssh because of the ssh banner
+	} else {
+		bonkableOffenses = []string{
+			"sudo", "data_injection", "register_injection", "tracing"}
+	}
 
+	var outMessage string
+	var outMessagePrev string
 	var a AuditMessage
 	var prevID string
+	var offensive bool
 	// Print the text of each received line
 	for line := range t.Lines {
 		a.InitAuditMessage(line.Text)
@@ -153,7 +151,6 @@ func main() {
 			prevID = a.AuditID
 		}
 
-		offensive := false
 		for _, offense := range bonkableOffenses {
 			if a.Key == offense {
 				offensive = true
@@ -165,37 +162,44 @@ func main() {
 				if a.Auid != name.Uid && a.AuidHumanReadable != "root" && a.AuidHumanReadable != "unset" {
 					commandBuilder := fmt.Sprintf("kill -9 %s", a.Pid)
 					runCMD(commandBuilder, "failed to kill a pid")
-					logrus.WithFields(logrus.Fields{
-						"cmd":      a.Exe,
-						"cmd_full": a.Proctile,
-						"time":     a.Timestamp,
-						"key":      a.Key,
-						"user":     a.AuidHumanReadable,
-					}).Warn("Bonked!")
-				} else {
-					logrus.WithFields(logrus.Fields{
-						"cmd":      a.Exe,
-						"cmd_full": a.Proctile,
-						"time":     a.Timestamp,
-						"key":      a.Key,
-						"user":     a.AuidHumanReadable,
-					}).Info("")
-
+					outMessage = fmt.Sprintf("[%s] CMD: %s;\tCMD_F: %s;\tUSER:%s\t;KEY %s\t;", color.RedString("BONK"),
+						color.RedString(a.Exe), color.RedString(a.Proctile),
+						color.RedString(a.AuidHumanReadable), color.RedString(a.Key))
+					if outMessage != outMessagePrev {
+						log.Print(outMessage)
+					}
 				}
+
+				if a.Auid != name.Uid && a.Uid == "root" {
+					outMessage = fmt.Sprintf("[%s] CMD: %s;\tCMD_F: %s;\tUSER:%s\t;KEY %s\t;", color.HiRedString("CRIT"),
+						color.HiRedString(a.Exe), color.HiRedString(a.Proctile),
+						color.HiRedString(a.AuidHumanReadable), color.HiRedString(a.Key))
+					if outMessage != outMessagePrev {
+						log.Print(outMessage)
+					}
+				}
+				// else {
+				// log.Printf("[%s] CMD: %s;\tCMD_F: %s;\tUSER:%s\t;KEY %s\t;", color.CyanString("FALSE"),
+				// 	color.CyanString(a.Exe), color.CyanString(a.ProctileHumanreadable),
+				// 	color.CyanString(a.AuidHumanReadable), color.CyanString(a.Key))
+				// }
 
 			}
 		}
 
-		if !offensive {
-			logrus.WithFields(logrus.Fields{
-				"cmd":      a.Exe,
-				"cmd_full": a.Proctile,
-				"time":     a.Timestamp,
-				"key":      a.Key,
-				"user":     a.AuidHumanReadable,
-			}).Info("info")
+		if !offensive && a.Key != "" {
 
+			outMessage = fmt.Sprintf("[%s] CMD: %s;\tCMD_F: %s;\tUSER:%s\t;KEY %s\t;", color.BlueString("INFO"),
+				color.BlueString(a.Exe), color.BlueString(a.Proctile),
+				color.BlueString(a.AuidHumanReadable), color.BlueString(a.Key))
+
+			if outMessage != outMessagePrev {
+				log.Print(outMessage)
+			}
 		}
+		offensive = false
+
+		outMessagePrev = outMessage
 
 	}
 

@@ -1,10 +1,8 @@
 package main
 
 import (
-	"encoding/hex"
 	"log"
 	"regexp"
-	"strconv"
 	"strings"
 )
 
@@ -61,6 +59,7 @@ type AuditMessage struct {
 	// should be self explanatory
 	Pid               string `json:"pid"`
 	PPid              string `json:"ppid"`
+	Uid               string `json:"uid"`
 	Auid              string `json:"auid"`
 	AuidHumanReadable string `json:"auid-hr"` //human readable
 
@@ -119,16 +118,20 @@ func (a *AuditMessage) InitAuditMessage(line string) {
 	if out := ParseAuditRuleRegex(proctileRule, line, "proctitle="); out != "" {
 		a.Proctile = out
 		// a := "2F7573722F73686172652F636F64652F636F6465202D2D756E6974792D6C61756E6368"
-		bs, err := hex.DecodeString(out)
+		bs, err := hexToStrings(out)
 		if err != nil {
 			log.Println(err)
 		}
-		out, err := strconv.Unquote("\"" + string(bs) + "\"")
-		if err != nil {
-			log.Println(err)
-		}
-		a.Proctile = string(out)
+		// out, err := strconv.Unquote("\"" + string(bs) + "\"")
+		// if err != nil {
+		// 	log.Println(err)
+		// }
+		a.Proctile = strings.Join(bs, "\x00")
 
+	}
+
+	if out := ParseAuditRuleRegex(nameRule, line, "uid="); out != "" {
+		a.Uid = out
 	}
 
 	if out := ParseAuditRuleRegex(auidRule, line, "auid="); out != "" {
