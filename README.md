@@ -26,6 +26,18 @@ https://serverfault.com/questions/752455/what-is-the-correct-way-to-generate-etc
 
 Got **cursed** netlink messaging to work with the kernel. What does this mean? No need to tail the output of a file! We can instantly kill any process that the kernel sees and labels as bonkable. 
 
+### Response time
+
+
+
+### How to run
+
+```bash
+sudo ./bonk --mode=load --color=true    
+
+
+```
+
 ### How it works
 
 1) read what mode

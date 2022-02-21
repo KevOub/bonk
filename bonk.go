@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"os/user"
 	"strings"
 	"syscall"
 
@@ -23,7 +24,7 @@ import (
 var (
 	fs           = flag.NewFlagSet("audit", flag.ExitOnError)
 	diag         = fs.String("diag", "logs", "dump raw information from kernel to file")
-	mode         = fs.String("mode", "load", "[load/bonk] choose between\n>'load' (load rules)\n>'mode' (bonk processes) ")
+	mode         = fs.String("mode", "load", "[load/bonk/list] choose between\n>'load' (load rules)\n>'mode' (bonk processes)\n>'list' (list rules in kernel)\n")
 	rate         = fs.Uint("rate", 0, "rate limit in kernel (default 0, no rate limit)")
 	backlog      = fs.Uint("backlog", 8192, "backlog limit")
 	immutable    = fs.Bool("immutable", false, "make kernel audit settings immutable (requires reboot to undo)")
@@ -49,6 +50,15 @@ const (
 )
 
 func main() {
+	user, err := user.Current()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if user.Username != "root" {
+		log.Fatal("not root!")
+	}
+
 	fs.Parse(os.Args[1:])
 	// color magic
 	if !*colorEnabled {
@@ -227,13 +237,13 @@ func runCMD(command, flavortext string) {
 	}
 }
 
-func bonkProc(a AuditMessageBonk) error {
+func bonkProc(a AuditMessageBonk, prev string) (string, error) {
 
 	var outMessage string
 	// if the offense is bonkable
 	if cf.IsBonkable(a.Key) {
 		// and the user is *not* allowed
-		if !cf.AllowedUser(a.Auid) {
+		if !cf.AllowedUser(a.AuidHumanReadable) {
 			// bonk the process!
 
 			// if *ptraceKill {
@@ -256,21 +266,31 @@ func bonkProc(a AuditMessageBonk) error {
 			// commandBuilder := fmt.Sprintf("kill -9 %s", a.Pid)
 			// runCMD(commandBuilder, "failed to kill a pid")
 			syscall.Kill(a.Pid, syscall.SIGKILL)
-
+			// currentTime := float64(time.Now().UnixNano()) / float64(time.Second)
+			// if s, err := strconv.ParseFloat(a.Timestamp, 64); err == nil {
+			// 	fmt.Printf("TIMENOW: %f TIMESTAMP: %s\n", currentTime, a.Timestamp)
+			// 	fmt.Printf("TIME DELTA: %f\n", float64(currentTime)-s)
+			// }
 			// }
 
 			outMessage = fmt.Sprintf("[%s] USER:%s\t;KEY %s\t; CMD: %s;\tCMD_F: %s;\t", color.RedString("BONK"),
 				color.RedString(a.AuidHumanReadable), color.RedString(a.Key),
 				color.RedString(a.Exe), color.RedString(a.Proctile),
 			)
-			log.Print(outMessage)
-
+			if prev != outMessage {
+				log.Print(outMessage)
+			}
+			return outMessage, nil
 		} else { // otherwise the user is allowed
 			outMessage = fmt.Sprintf("[%s] USER:%s\t;KEY %s\t; CMD: %s;\tCMD_F: %s;\t", color.HiMagentaString("CRIT"),
 				color.HiMagentaString(a.AuidHumanReadable), color.HiMagentaString(a.Key),
 				color.HiMagentaString(a.Exe), color.HiMagentaString(a.Proctile),
 			)
-			log.Print(outMessage)
+
+			if prev != outMessage {
+				log.Print(outMessage)
+			}
+			return outMessage, nil
 		}
 
 	} else {
@@ -282,20 +302,23 @@ func bonkProc(a AuditMessageBonk) error {
 					color.BlueString(a.AuidHumanReadable), color.BlueString(a.Key),
 					color.BlueString(a.Exe), color.BlueString(a.Proctile),
 				)
-				log.Print(outMessage)
+				if outMessage != prev {
+					log.Print(outMessage)
+				}
+				return outMessage, nil
 
 			}
 		}
 
 	}
-
-	return nil
+	return "", nil
 }
 
 // watch output
 func receive(r *libaudit.AuditClient) error {
 
 	var a AuditMessageBonk
+	prevMessage := ""
 
 	// var outMessagePrev string
 	for {
@@ -317,7 +340,7 @@ func receive(r *libaudit.AuditClient) error {
 		if a.IsNewAuditID(string(rawEvent.Data)) {
 			// so this is a new audit message
 			// bonk the cumulative message
-			bonkProc(a)
+			prevMessage, _ = bonkProc(a, prevMessage)
 			// then make new audit message
 			a = AuditMessageBonk{}
 			err := a.InitAuditMessage(string(rawEvent.Data))

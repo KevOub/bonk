@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"io/ioutil"
+	"strings"
 )
 
 type Config struct {
@@ -27,11 +28,13 @@ func (config *Config) Load(path string) error {
 func (config Config) AllowedUser(allowMe string) bool {
 
 	for _, user := range config.Users {
-		if allowMe == user {
+		if strings.Contains(allowMe, user) {
 			return true
 		}
 	}
-	return false
+
+	return allowMe == ""
+
 }
 
 func (config Config) IsBonkable(allowMe string) bool {

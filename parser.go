@@ -136,11 +136,11 @@ func (a *AuditMessageBonk) InitAuditMessage(line string) error {
 		if err != nil {
 			return fmt.Errorf("error>\n%v", err)
 		}
-		out, err := strconv.Unquote("\"" + string(bs) + "\"")
-		if err != nil {
-			return fmt.Errorf("error>\n%v", err)
-		}
-		a.Proctile = string(out)
+		// out, err := strconv.Unquote("\"" + string(bs) + "\"")
+		// if err != nil {
+		// 	return fmt.Errorf("error>\n%v", err)
+		// }
+		a.Proctile = string(bs)
 
 	}
 
