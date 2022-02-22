@@ -13,21 +13,21 @@ fi
 
 if command -v audit &> /dev/null
 then
-    echo "todo remove audit"
+    service auditd stop
+    service audit stop
     exit
 fi
 
-if command -v auditd &> /dev/null
-then
-    echo "todo remove audit"
-    exit
-fi
+mkdir -p /var/log/bonk/
+touch /var/log/bonk/bonk.log
+mkdir -p /etc/bonk/
+wget -O /etc/bonk/bonk.json https://github.com/KevOub/bonk/blob/dev2/config.json?raw=true 
 
 
-wget -O /usr/sbin/bonk https://github.com/KevOub/bonk/blob/master/bonk?raw=true 
+wget -O /usr/sbin/bonk https://github.com/KevOub/bonk/blob/dev2/bonk?raw=true 
 chmod u+x /usr/sbin/bonk; out="$?"
 
-if [[$out -eq 0]]; then
+if [[ $out -eq 0 ]]; then
    echo "Installed the bonk"
 else
    echo "failed to install bonk"

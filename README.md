@@ -52,7 +52,7 @@ If the syscall is naughty,
 
 ### TODO
 - systemctl service ??
-- fix installation script
+- fix installation script (currently is using two different branches lol)
 
 
 ### How to disable auditd
