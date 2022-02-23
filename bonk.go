@@ -9,7 +9,6 @@ import (
 	"io"
 	"log"
 	"os"
-	"os/exec"
 	"os/user"
 	"strings"
 	"syscall"
@@ -24,7 +23,7 @@ import (
 var (
 	fs           = flag.NewFlagSet("audit", flag.ExitOnError)
 	diag         = fs.String("diag", "logs", "dump raw information from kernel to file")
-	mode         = fs.String("mode", "load", "[load/bonk/list] choose between\n>'load' (load rules)\n>'mode' (bonk processes)\n>'list' (list rules in kernel)\n")
+	mode         = fs.String("mode", "load", "[load/bonk/list] choose between\n>'load' (load rules)\n>'bonk' (bonk processes)\n>'honk' (just honk no bonk)\n>'list' (list rules in kernel)\n")
 	rate         = fs.Uint("rate", 0, "rate limit in kernel (default 0, no rate limit)")
 	backlog      = fs.Uint("backlog", 8192, "backlog limit")
 	immutable    = fs.Bool("immutable", false, "make kernel audit settings immutable (requires reboot to undo)")
@@ -35,7 +34,11 @@ var (
 	configPath   = fs.String("config", "config.json", "where custom config is located")
 	showInfo     = fs.Bool("info", true, "whether to show informational warnings or just bonks")
 	cf           = Config{}
-	//go:embed good.rules
+	RawLogger    *log.Logger
+	CoolLogger   *log.Logger
+	//go:embed embed/good.rules
+	//go:embed embed/bonk.art
+	//go:embed embed/config.json
 	res embed.FS
 )
 
@@ -44,10 +47,55 @@ var (
 
 const (
 	// RULESPATH = "/etc/audit/rules.d/audit.rules"
-	CONFIGPATH = "/var/bonk/config.json"
-	// RULESPATH = "/etc/audit/rules.d/audit.rules"
-	LOGSPATH = "/var/log/bonk/bonk.log"
+	CONFIGPATH = "/etc/bonk/config.json"
+	// RULESPATH = "/etc/bonk/config"
+	LOGSPATH     = "/var/log/bonk/bonk.log"
+	LOGSRAWPATH  = "/var/log/bonk/bonk-verbose.log"
+	LOGSCOOLPATH = "/var/log/bonk/bonk-cool.log"
 )
+
+func init() {
+	// set up logging
+	logFile, err := os.OpenFile(LOGSPATH, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
+	if err != nil {
+		log.Fatalf("error: %v", err)
+	}
+
+	CoolLogger = log.New(logFile, "", log.Ltime|log.Lshortfile)
+
+	// only log when in bonk mode
+	if *mode == "bonk" {
+		mw := io.MultiWriter(os.Stdout, logFile)
+		CoolLogger.SetOutput(mw)
+	} else {
+		CoolLogger.SetOutput(logFile)
+	}
+
+	RawLogger = log.New(logFile, "", log.Lshortfile)
+
+	logRawFile, err := os.OpenFile(LOGSRAWPATH, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
+	if err != nil {
+		log.Fatalf("error: %v", err)
+	}
+	RawLogger.SetOutput(logRawFile)
+
+	// create /var/bonk & /etc/bonk
+	path := "/var/bonk"
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		err := os.Mkdir(path, os.ModePerm)
+		if err != nil {
+			fmt.Printf("error> %s\n", err)
+		}
+	}
+	path = "/etc/bonk"
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		err := os.Mkdir(path, os.ModePerm)
+		if err != nil {
+			fmt.Printf("error> %s\n", err)
+		}
+	}
+
+}
 
 func main() {
 	user, err := user.Current()
@@ -65,25 +113,12 @@ func main() {
 		color.NoColor = true
 	}
 
-	// set up logging
-	logFile, err := os.OpenFile(LOGSPATH, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
-	if err != nil {
-		panic(err)
-	}
-	// only log when in bonk mode
-	if *verbose && *mode == "bonk" {
-		mw := io.MultiWriter(os.Stdout, logFile)
-		log.SetOutput(mw)
-	} else {
-		log.SetOutput(logFile)
-	}
-
 	// load configuration file
 	cf.Load(*configPath)
-
 	if err := read(); err != nil {
 		log.Fatalf("error: %v", err)
 	}
+
 }
 
 func ruleAddWrapper(rule2add string, r *libaudit.AuditClient) error {
@@ -186,7 +221,7 @@ func read() error {
 
 	if *mode == "load" {
 		return load(client)
-	} else if *mode == "bonk" {
+	} else if *mode == "bonk" || *mode == "honk" {
 		return receive(client)
 	} else {
 		flag.PrintDefaults()
@@ -197,7 +232,13 @@ func read() error {
 
 // command to load our rules
 func load(r *libaudit.AuditClient) error {
-	data, _ := res.Open("good.rules")
+	dumpConfig()
+
+	data, err := res.Open("embed/good.rules")
+	if err != nil {
+		return err
+	}
+	defer data.Close()
 
 	scanner := bufio.NewScanner(data)
 	for scanner.Scan() {
@@ -227,14 +268,32 @@ func load(r *libaudit.AuditClient) error {
 	return nil
 }
 
-func runCMD(command, flavortext string) {
-	byteCommand := strings.Split(command, " ") // splits into bytes seperated by spaces
-	_, err := exec.Command(byteCommand[0], byteCommand[1:]...).Output()
+func dumpConfig() error {
+	data, err := res.Open("embed/config.json")
 	if err != nil {
-		if _, ok := err.(*exec.ExitError); !ok {
-			log.Fatalf("%s\n%s", flavortext, err)
-		}
+		return err
 	}
+	defer data.Close()
+
+	// if config.json does not exist yet we can change that
+	if _, err := os.Stat(CONFIGPATH); errors.Is(err, os.ErrNotExist) {
+		output, err := os.OpenFile(CONFIGPATH, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
+		if err != nil {
+			return err
+		}
+		defer output.Close()
+
+		_, err = io.Copy(output, data)
+		if err != nil {
+			return err
+		}
+
+		return nil
+
+	}
+
+	return nil
+
 }
 
 func bonkProc(a AuditMessageBonk, prev string) (string, error) {
@@ -265,7 +324,9 @@ func bonkProc(a AuditMessageBonk, prev string) (string, error) {
 			// } else {
 			// commandBuilder := fmt.Sprintf("kill -9 %s", a.Pid)
 			// runCMD(commandBuilder, "failed to kill a pid")
-			syscall.Kill(a.Pid, syscall.SIGKILL)
+			if *mode == "bonk" {
+				syscall.Kill(a.Pid, syscall.SIGKILL)
+			}
 			// currentTime := float64(time.Now().UnixNano()) / float64(time.Second)
 			// if s, err := strconv.ParseFloat(a.Timestamp, 64); err == nil {
 			// 	fmt.Printf("TIMENOW: %f TIMESTAMP: %s\n", currentTime, a.Timestamp)
@@ -278,7 +339,8 @@ func bonkProc(a AuditMessageBonk, prev string) (string, error) {
 				color.RedString(a.Exe), color.RedString(a.Proctile),
 			)
 			if prev != outMessage {
-				log.Print(outMessage)
+				CoolLogger.Println(outMessage)
+				fmt.Print(outMessage)
 			}
 			return outMessage, nil
 		} else { // otherwise the user is allowed
@@ -288,7 +350,8 @@ func bonkProc(a AuditMessageBonk, prev string) (string, error) {
 			)
 
 			if prev != outMessage {
-				log.Print(outMessage)
+				CoolLogger.Print(outMessage)
+				fmt.Println(outMessage)
 			}
 			return outMessage, nil
 		}
@@ -303,7 +366,9 @@ func bonkProc(a AuditMessageBonk, prev string) (string, error) {
 					color.BlueString(a.Exe), color.BlueString(a.Proctile),
 				)
 				if outMessage != prev {
-					log.Print(outMessage)
+					CoolLogger.Print(outMessage)
+					fmt.Println(outMessage)
+
 				}
 				return outMessage, nil
 
@@ -334,13 +399,15 @@ func receive(r *libaudit.AuditClient) error {
 			continue
 		}
 
-		// THIS IS THE BONK LOGIC
-		// fmt.Printf("type=%v msg=%v\n", rawEvent.Type, string(rawEvent.Data))
+		RawLogger.Printf("type=%v msg=%v\n", rawEvent.Type, string(rawEvent.Data))
 
+		// THIS IS THE BONK LOGIC
 		if a.IsNewAuditID(string(rawEvent.Data)) {
 			// so this is a new audit message
 			// bonk the cumulative message
-			prevMessage, _ = bonkProc(a, prevMessage)
+			if *mode == "bonk" || *mode == "honk" {
+				prevMessage, _ = bonkProc(a, prevMessage)
+			}
 			// then make new audit message
 			a = AuditMessageBonk{}
 			err := a.InitAuditMessage(string(rawEvent.Data))
@@ -354,6 +421,9 @@ func receive(r *libaudit.AuditClient) error {
 				fmt.Print(err)
 			}
 		}
+
+		// always save the raw audit log (for future investigation, of course)
+		// RawLogger.Println(rawEvent.Type.String())
 
 	}
 }
