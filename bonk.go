@@ -21,21 +21,21 @@ import (
 )
 
 var (
-	fs           = flag.NewFlagSet("audit", flag.ExitOnError)
-	diag         = fs.String("diag", "logs", "dump raw information from kernel to file")
+	fs          = flag.NewFlagSet("bonk", flag.ExitOnError)
+	diag        = fs.String("diag", "logs", "dump raw information from kernel to file")
+	rate        = fs.Uint("rate", 0, "rate limit in kernel (default 0, no rate limit)")
+	backlog     = fs.Uint("backlog", 8192, "backlog limit")
+	receiveOnly = fs.Bool("ro", false, "receive only using multicast, requires kernel 3.16+")
+	// immutable    = fs.Bool("immutable", false, "make kernel audit settings immutable (requires reboot to undo)")
 	mode         = fs.String("mode", "load", "[load/bonk/list] choose between\n>'load' (load rules)\n>'bonk' (bonk processes)\n>'honk' (just honk no bonk)\n>'list' (list rules in kernel)\n")
-	rate         = fs.Uint("rate", 0, "rate limit in kernel (default 0, no rate limit)")
-	backlog      = fs.Uint("backlog", 8192, "backlog limit")
-	immutable    = fs.Bool("immutable", false, "make kernel audit settings immutable (requires reboot to undo)")
-	receiveOnly  = fs.Bool("ro", false, "receive only using multicast, requires kernel 3.16+")
 	verbose      = fs.Bool("v", true, "whether to print to stdout or not")
 	colorEnabled = fs.Bool("color", true, "whether to use color or not")
-	ptraceKill   = fs.Bool("ptrace", false, "use ptrace trolling to kill process rudely")
-	configPath   = fs.String("config", "config.json", "where custom config is located")
-	showInfo     = fs.Bool("info", true, "whether to show informational warnings or just bonks")
-	cf           = Config{}
-	RawLogger    *log.Logger
-	CoolLogger   *log.Logger
+	// ptraceKill   = fs.Bool("ptrace", false, "use ptrace trolling to kill process rudely")
+	configPath = fs.String("config", "", "where custom config is located")
+	showInfo   = fs.Bool("info", true, "whether to show informational warnings or just bonks")
+	cf         = Config{}
+	RawLogger  *log.Logger
+	CoolLogger *log.Logger
 	//go:embed embed/good.rules
 	//go:embed embed/bonk.art
 	//go:embed embed/config.json
@@ -114,7 +114,12 @@ func main() {
 	}
 
 	// load configuration file
-	cf.Load(*configPath)
+	if *configPath == "" {
+		cf.Load(CONFIGPATH)
+	} else {
+		dumpConfig()
+		cf.Load(*configPath)
+	}
 	if err := read(); err != nil {
 		log.Fatalf("error: %v", err)
 	}
@@ -232,7 +237,6 @@ func read() error {
 
 // command to load our rules
 func load(r *libaudit.AuditClient) error {
-	dumpConfig()
 
 	data, err := res.Open("embed/good.rules")
 	if err != nil {
@@ -291,6 +295,7 @@ func dumpConfig() error {
 
 	}
 
+	// otherwise there is something already there we should not override
 	return nil
 
 }
@@ -339,18 +344,22 @@ func bonkProc(a AuditMessageBonk, prev string) (string, error) {
 			)
 			if prev != outMessage {
 				CoolLogger.Println(outMessage)
-				fmt.Print(outMessage)
+				if *verbose {
+					fmt.Println(outMessage)
+				}
 			}
 			return outMessage, nil
 		} else { // otherwise the user is allowed
-			outMessage = fmt.Sprintf("[%s] USER:%s\t;KEY %s\t; CMD: %s;\tCMD_F: %s;\t", color.HiMagentaString("CRIT"),
+			outMessage = fmt.Sprintf("[%s] USER:%s\t;KEY %s\t; CMD: %s;\tCMD_F: %s;\t", color.HiMagentaString("COOL"),
 				color.HiMagentaString(a.AuidHumanReadable), color.HiMagentaString(a.Key),
 				color.HiMagentaString(a.Exe), color.HiMagentaString(a.Proctile),
 			)
 
 			if prev != outMessage {
 				CoolLogger.Print(outMessage)
-				fmt.Println(outMessage)
+				if *verbose {
+					fmt.Println(outMessage)
+				}
 			}
 			return outMessage, nil
 		}
@@ -366,7 +375,9 @@ func bonkProc(a AuditMessageBonk, prev string) (string, error) {
 				)
 				if outMessage != prev {
 					CoolLogger.Print(outMessage)
-					fmt.Println(outMessage)
+					if *verbose {
+						fmt.Println(outMessage)
+					}
 
 				}
 				return outMessage, nil
@@ -389,7 +400,7 @@ func receive(r *libaudit.AuditClient) error {
 
 		rawEvent, err := r.Receive(false)
 		if err != nil {
-			return fmt.Errorf("receive failed: %w", err)
+			fmt.Println(fmt.Errorf("receive failed: %w", err))
 		}
 
 		// Messages from 1300-2999 are valid audit messages.
@@ -398,6 +409,7 @@ func receive(r *libaudit.AuditClient) error {
 			continue
 		}
 
+		// always save the raw audit log (for future investigation, of course
 		RawLogger.Printf("type=%v msg=%v\n", rawEvent.Type, string(rawEvent.Data))
 
 		// THIS IS THE BONK LOGIC
@@ -420,9 +432,6 @@ func receive(r *libaudit.AuditClient) error {
 				fmt.Print(err)
 			}
 		}
-
-		// always save the raw audit log (for future investigation, of course)
-		// RawLogger.Println(rawEvent.Type.String())
 
 	}
 }
