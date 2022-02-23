@@ -27,13 +27,13 @@ This is a very portable binary. It installs its config file and its own rules
 
 ### Response time
 
-~FAST~
+FAST
 
 ### How to run
 
 ```bash
 sudo ./bonk --mode=load --color=true    
-bonk --mode=bonk -v=false --color=false &
+sudo bonk --mode=bonk -v=false --color=false &
 ```
 
 ```

@@ -385,20 +385,6 @@ func bonkProc(a AuditMessageBonk, prev string) (string, error) {
 			}
 		}
 
-		if !offensive && a.Key != "" {
-
-			outMessage = fmt.Sprintf("[%s] CMD: %s;\tCMD_F: %s;\tUSER:%s\t;KEY %s\t;", color.BlueString("INFO"),
-				color.BlueString(a.Exe), color.BlueString(a.Proctile),
-				color.BlueString(a.AuidHumanReadable), color.BlueString(a.Key))
-
-			if outMessage != outMessagePrev {
-				log.Print(outMessage)
-			}
-		}
-		offensive = false
-
-		outMessagePrev = outMessage
-
 	}
 	return "", nil
 }

@@ -1,17 +1,12 @@
 package main
 
 import (
-<<<<<<< HEAD
 	"encoding/hex"
 	"fmt"
 	"log"
 	"os/user"
 	"regexp"
 	"strconv"
-=======
-	"log"
-	"regexp"
->>>>>>> master
 	"strings"
 )
 
@@ -28,10 +23,7 @@ var (
 	ppidRule      = regexp.MustCompile(`ppid=([\d]+)`)
 	nameRule      = regexp.MustCompile(`name=\"(.*?)\"`)
 	auidRule      = regexp.MustCompile(`auid=([\d].?)+`)
-<<<<<<< HEAD
 	uidRule       = regexp.MustCompile(`uid=([\d].?)+`)
-=======
->>>>>>> master
 	auidRuleAlpha = regexp.MustCompile(`AUID="(.*?)"`)
 	proctileRule  = regexp.MustCompile(`proctitle=(([\w].?)+)`)
 	// Rules        = make(map[*regexp.Regexp]string)
@@ -49,11 +41,7 @@ var (
 // 	Rules[proctileRule] = "proctitle="
 // }
 
-<<<<<<< HEAD
 type AuditMessageBonk struct {
-=======
-type AuditMessage struct {
->>>>>>> master
 	// msg=audit(1364481363.243:24287):
 	AuditIDRaw string `json:"-"`
 	AuditID    string `json:"auditID"`
@@ -74,17 +62,10 @@ type AuditMessage struct {
 	Key string `json:"key"`
 
 	// should be self explanatory
-<<<<<<< HEAD
 	Pid               int    `json:"pid"`
 	PPid              int    `json:"ppid"`
 	Auid              string `json:"auid"`
 	Uid               string `json:"uid"`
-=======
-	Pid               string `json:"pid"`
-	PPid              string `json:"ppid"`
-	Uid               string `json:"uid"`
-	Auid              string `json:"auid"`
->>>>>>> master
 	AuidHumanReadable string `json:"auid-hr"` //human readable
 
 	// name="/home/kevin"
@@ -99,11 +80,7 @@ type AuditMessage struct {
 	Finished bool `json:"-"`
 }
 
-<<<<<<< HEAD
 func (a *AuditMessageBonk) InitAuditMessage(line string) error {
-=======
-func (a *AuditMessage) InitAuditMessage(line string) {
->>>>>>> master
 	a.AuditIDRaw = ParseAuditRuleRegex(msgRule, line, "")
 
 	if a.AuditIDRaw != "" && len(a.AuditIDRaw) > 20 {
@@ -111,11 +88,7 @@ func (a *AuditMessage) InitAuditMessage(line string) {
 		a.AuditID = a.AuditIDRaw[21:]
 		a.AuditID = strings.Trim(a.AuditID, ")")
 	} else {
-<<<<<<< HEAD
 		return nil
-=======
-		return
->>>>>>> master
 	}
 	// fmt.Printf("%s\t%s\n", a.Timestamp, a.AuditID)
 

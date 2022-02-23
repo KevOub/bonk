@@ -14,6 +14,7 @@ build:
 	mkdir -p bin/
 	# rm ./bin/*
 	GOARCH=amd64 GOOS=linux go build -ldflags "$(LDFLAGS)" -o bin/$(BINARY_NAME)-linux .
+	GOARCH=386 GOOS=linux go build -ldflags "$(LDFLAGS)" -o bin/$(BINARY_NAME)-linux-386 .
 	GOARCH=arm GOOS=linux go build -ldflags "$(LDFLAGS)" -o bin/$(BINARY_NAME)-linux-arm .
 	GOARCH=arm64 GOOS=linux go build -ldflags "$(LDFLAGS)" -o bin/$(BINARY_NAME)-linux-arm64 .
 
