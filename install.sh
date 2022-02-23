@@ -21,10 +21,10 @@ fi
 mkdir -p /var/log/bonk/
 touch /var/log/bonk/bonk.log
 mkdir -p /etc/bonk/
-wget -O /etc/bonk/bonk.json https://github.com/KevOub/bonk/blob/dev2/config.json?raw=true 
+wget -q -O /etc/bonk/bonk.json https://github.com/KevOub/bonk/blob/dev2/config.json?raw=true 
 
 
-wget -O /usr/sbin/bonk https://github.com/KevOub/bonk/blob/dev2/bonk?raw=true 
+wget -q -O /usr/sbin/bonk https://github.com/KevOub/bonk/blob/dev2/bonk?raw=true 
 chmod u+x /usr/sbin/bonk; out="$?"
 
 if [[ $out -eq 0 ]]; then

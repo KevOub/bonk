@@ -264,7 +264,6 @@ func load(r *libaudit.AuditClient) error {
 		}
 	}
 
-	fmt.Println(r.GetRules())
 	return nil
 }
 
