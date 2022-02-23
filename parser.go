@@ -134,7 +134,6 @@ func (a *AuditMessage) InitAuditMessage(line string) {
 		a.Key = out
 	}
 	if out := ParseAuditRuleRegex(pidRule, line, "pid="); out != "" {
-<<<<<<< HEAD
 		pid2int, err := strconv.Atoi(out)
 		if err != nil {
 			return fmt.Errorf("error>\n%s", err)
@@ -148,12 +147,6 @@ func (a *AuditMessage) InitAuditMessage(line string) {
 		}
 
 		a.PPid = pid2int
-=======
-		a.Pid = out
-	}
-	if out := ParseAuditRuleRegex(ppidRule, line, "ppid="); out != "" {
-		a.PPid = out
->>>>>>> master
 	}
 	// a.Name = ParseAuditRuleRegex(nameRule, line, "name=")
 	// a.Proctile = ParseAuditRuleRegex(proctileRule, line, "proctitle=")
@@ -166,7 +159,6 @@ func (a *AuditMessage) InitAuditMessage(line string) {
 	if out := ParseAuditRuleRegex(proctileRule, line, "proctitle="); out != "" {
 		a.Proctile = out
 		// a := "2F7573722F73686172652F636F64652F636F6465202D2D756E6974792D6C61756E6368"
-<<<<<<< HEAD
 		bs, err := hex.DecodeString(out)
 		if err != nil {
 			return fmt.Errorf("error>\n%v", err)
@@ -210,39 +202,6 @@ func (a *AuditMessage) InitAuditMessage(line string) {
 
 	return nil
 
-=======
-		bs, err := hexToStrings(out)
-		if err != nil {
-			log.Println(err)
-		}
-		// out, err := strconv.Unquote("\"" + string(bs) + "\"")
-		// if err != nil {
-		// 	log.Println(err)
-		// }
-		a.Proctile = strings.Join(bs, "\x00")
-
-	}
-
-	if out := ParseAuditRuleRegex(nameRule, line, "uid="); out != "" {
-		a.Uid = out
-	}
-
-	if out := ParseAuditRuleRegex(auidRule, line, "auid="); out != "" {
-		// a.Auid = ParseAuditRuleRegex(auidRule, line, "auid=")
-		a.Auid = out
-
-		// user, err := user.LookupId(a.Auid)
-		// if err != nil {
-		// 	log.Println(err)
-		// } else {
-		// 	a.AuidHumanReadable = user.Username
-		// }
-	}
-
-	if out := ParseAuditRuleRegex(auidRuleAlpha, line, "AUID="); out != "" {
-		a.AuidHumanReadable = out
-	}
->>>>>>> master
 }
 
 func ParseAuditRuleRegex(rules *regexp.Regexp, msg string, remove string) string {
@@ -277,7 +236,6 @@ func ParseAuditRuleRegex(rules *regexp.Regexp, msg string, remove string) string
 	return output
 
 }
-<<<<<<< HEAD
 
 func (a AuditMessageBonk) IsNewAuditID(line string) bool {
 	var AuditID string
@@ -299,5 +257,3 @@ func (a AuditMessageBonk) IsNewAuditID(line string) bool {
 	return false
 
 }
-=======
->>>>>>> master
