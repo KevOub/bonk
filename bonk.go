@@ -31,11 +31,12 @@ var (
 	verbose      = fs.Bool("v", true, "whether to print to stdout or not")
 	colorEnabled = fs.Bool("color", true, "whether to use color or not")
 	// ptraceKill   = fs.Bool("ptrace", false, "use ptrace trolling to kill process rudely")
-	configPath = fs.String("config", "", "where custom config is located")
-	showInfo   = fs.Bool("info", true, "whether to show informational warnings or just bonks")
-	cf         = Config{}
-	RawLogger  *log.Logger
-	CoolLogger *log.Logger
+	configPath  = fs.String("config", "", "where custom config is located")
+	showInfo    = fs.Bool("info", true, "whether to show informational warnings or just bonks")
+	cf          = Config{}
+	RawLogger   *log.Logger
+	CoolLogger  *log.Logger
+	IPAddresses map[string]int
 	//go:embed embed/good.rules
 	//go:embed embed/bonk.art
 	//go:embed embed/config.json
@@ -52,9 +53,11 @@ const (
 	LOGSPATH     = "/var/log/bonk/bonk.log"
 	LOGSRAWPATH  = "/var/log/bonk/bonk-verbose.log"
 	LOGSCOOLPATH = "/var/log/bonk/bonk-cool.log"
+	IPADDRESSES  = "/etc/bonk/ips"
 )
 
 func init() {
+	IPAddresses = make(map[string]int)
 	// set up logging
 	logFile, err := os.OpenFile(LOGSPATH, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
 	if err != nil {
@@ -300,7 +303,37 @@ func dumpConfig() error {
 
 }
 
+func SaveIP(ip string) error {
+	output, err := os.OpenFile(IPADDRESSES, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
+	if err != nil {
+		return err
+	}
+	defer output.Close()
+
+	output.WriteString(ip + "\n")
+	if err != nil {
+		return err
+	}
+
+	return nil
+
+}
+
 func bonkProc(a AuditMessageBonk, prev string) (string, error) {
+
+	// fmt.Println(getIPfromPID(a.Pid))
+	if establishedIPAdresses, err := getIPfromPID(a.Pid); err == nil {
+		for key := range establishedIPAdresses {
+			if _, exists := IPAddresses[key]; exists {
+				IPAddresses[key] += 1
+			} else {
+				SaveIP(key)
+				IPAddresses[key] = 0
+			}
+
+		}
+	}
+	// fmt.Printf("%v", IPAddresses)
 
 	var outMessage string
 	// if the offense is bonkable
