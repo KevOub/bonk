@@ -31,12 +31,13 @@ var (
 	verbose      = fs.Bool("v", true, "whether to print to stdout or not")
 	colorEnabled = fs.Bool("color", true, "whether to use color or not")
 	// ptraceKill   = fs.Bool("ptrace", false, "use ptrace trolling to kill process rudely")
-	configPath  = fs.String("config", "", "where custom config is located")
-	showInfo    = fs.Bool("info", true, "whether to show informational warnings or just bonks")
-	cf          = Config{}
-	RawLogger   *log.Logger
-	CoolLogger  *log.Logger
-	IPAddresses map[string]int
+	configPath      = fs.String("config", "", "where custom config is located")
+	showInfo        = fs.Bool("info", true, "whether to show informational warnings or just bonks")
+	BonksBeforeWarn = fs.Int("warn", 10, "Number of bonkable offenses before IP address is said to be a potential threat of an IP")
+	cf              = Config{}
+	RawLogger       *log.Logger
+	CoolLogger      *log.Logger
+	IPAddresses     map[string]int
 	//go:embed embed/good.rules
 	//go:embed embed/bonk.art
 	//go:embed embed/config.json
@@ -303,14 +304,14 @@ func dumpConfig() error {
 
 }
 
-func SaveIP(ip string) error {
+func saveIP(ip string, event string) error {
 	output, err := os.OpenFile(IPADDRESSES, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
 	if err != nil {
 		return err
 	}
 	defer output.Close()
 
-	output.WriteString(ip + "\n")
+	output.WriteString(event + "IP=" + ip + "\n")
 	if err != nil {
 		return err
 	}
@@ -319,20 +320,29 @@ func SaveIP(ip string) error {
 
 }
 
-func bonkProc(a AuditMessageBonk, prev string) (string, error) {
-
-	// fmt.Println(getIPfromPID(a.Pid))
-	if establishedIPAdresses, err := getIPfromPID(a.Pid); err == nil {
+func handleIP(pid int, event string) {
+	// wacky code which reads /proc/*PID*/net/tcp for established ip addresses
+	establishedIPAdresses, err := getIPfromPID(pid)
+	if err == nil {
 		for key := range establishedIPAdresses {
-			if _, exists := IPAddresses[key]; exists {
-				IPAddresses[key] += 1
-			} else {
-				SaveIP(key)
+			if _, exists := IPAddresses[key]; !exists {
 				IPAddresses[key] = 0
-			}
+			} else {
+				IPAddresses[key] += 1
+				if IPAddresses[key] > *BonksBeforeWarn {
+					OutPutMessage := fmt.Sprintf("[WARN] THE IP ADDRESS %s IS BEING SUSPICIOUS", color.GreenString(key))
+					fmt.Println(OutPutMessage)
+					IPAddresses[key] = 0 // reset the warns back to 0
+				}
 
+			}
+			saveIP(key, event)
 		}
 	}
+}
+
+func bonkProc(a AuditMessageBonk, prev string) (string, error) {
+
 	// fmt.Printf("%v", IPAddresses)
 
 	var outMessage string
@@ -381,6 +391,7 @@ func bonkProc(a AuditMessageBonk, prev string) (string, error) {
 					fmt.Println(outMessage)
 				}
 			}
+			handleIP(a.Pid, outMessage)
 			return outMessage, nil
 		} else { // otherwise the user is allowed
 			outMessage = fmt.Sprintf("[%s] USER:%s\t;KEY %s\t; CMD: %s;\tCMD_F: %s;\t", color.HiMagentaString("COOL"),
@@ -394,6 +405,7 @@ func bonkProc(a AuditMessageBonk, prev string) (string, error) {
 					fmt.Println(outMessage)
 				}
 			}
+			handleIP(a.Pid, outMessage)
 			return outMessage, nil
 		}
 
