@@ -7,6 +7,8 @@ import (
 )
 
 type Config struct {
+	BadIPs   []string `json:"banned-ips"`
+	GoodIPs  []string `json:"allowed-ips"`
 	Users    []string `json:"allowed-user"`
 	Rules    []string `json:"rules"`
 	Bonkable []string `json:"bonkable"`
@@ -23,6 +25,30 @@ func (config *Config) Load(path string) error {
 		return err
 	}
 	return nil
+}
+
+func (config Config) BannedIP(allowMe string) bool {
+
+	for _, ip := range config.BadIPs {
+		if strings.Contains(allowMe, ip) {
+			return true
+		}
+	}
+
+	return allowMe == ""
+
+}
+
+func (config Config) AllowedIP(allowMe string) bool {
+
+	for _, ip := range config.GoodIPs {
+		if strings.Contains(allowMe, ip) {
+			return true
+		}
+	}
+
+	return allowMe == ""
+
 }
 
 func (config Config) AllowedUser(allowMe string) bool {

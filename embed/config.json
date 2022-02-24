@@ -1,4 +1,10 @@
 {
+    "allowed-ips": [
+        ""
+    ],
+    "banned-ips": [
+        ""
+    ],
     "allowed-user": [
         "kevin",
         "unset",
@@ -8,24 +14,24 @@
         "-w /var/www/html -p wa -key apache"
     ],
     "bonkable": [
-    "actions",
-    "passwd_modification",
-    "group_modification",
-    "user_modification",
-    "network_modifications",
-    "pam",
-    "mail",
-    "sshd",
-    "rootkey",
-    "systemd",
-    "unauthedfileaccess",
-    "priv_esc",
-    "power",
-    "dbus_send",
-    "code_injection",
-    "data_injection",
-    "tracing",
-    "register_injection",
-    "software_mgmt"
+        "actions",
+        "passwd_modification",
+        "group_modification",
+        "user_modification",
+        "network_modifications",
+        "pam",
+        "mail",
+        "sshd",
+        "rootkey",
+        "systemd",
+        "unauthedfileaccess",
+        "priv_esc",
+        "power",
+        "dbus_send",
+        "code_injection",
+        "data_injection",
+        "tracing",
+        "register_injection",
+        "software_mgmt"
     ]
 }
