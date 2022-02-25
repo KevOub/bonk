@@ -114,6 +114,7 @@ func main() {
 
 	// parse flags
 	fs.Parse(os.Args[1:])
+	fmt.Printf("FLAGS:\n%+v\n", fs.Args())
 	// color magic
 	if !*colorEnabled {
 		color.NoColor = true
@@ -126,7 +127,7 @@ func main() {
 		dumpConfig()
 		cf.Load(*configPath)
 	}
-	fmt.Printf("%+v\n\n", cf)
+	fmt.Printf("CONFIG:\n%+v\n\n", cf)
 	if err := read(); err != nil {
 		log.Fatalf("error: %v", err)
 	}

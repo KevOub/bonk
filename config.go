@@ -35,12 +35,11 @@ func (config Config) BannedIP(allowMe string) bool {
 		}
 	}
 
-	return allowMe == ""
+	return false
 
 }
 
 func (config Config) AllowedIP(allowMe string) bool {
-
 	for _, ip := range config.GoodIPs {
 		if strings.Contains(allowMe, ip) {
 			return true

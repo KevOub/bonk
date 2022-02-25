@@ -75,7 +75,7 @@ func getIPfromPID(pid int) (map[string]int, error) {
 
 	file, err := os.Open(file2open)
 	if err != nil {
-		return nil, err
+		return nil, nil
 	}
 	defer file.Close()
 

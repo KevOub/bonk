@@ -121,7 +121,7 @@ func bonkProc(a AuditMessageBonk, prev string) (string, error) {
 	// fmt.Printf("%v", IPAddresses)
 
 	// try to bonk the process by IP
-	if *mode == "bonk" {
+	if *mode == "bonk" || *mode == "honk" {
 		// check to see if the process has been bonked
 		if status := bonkIP(a); status {
 			return "", nil
@@ -194,29 +194,36 @@ func bonkProc(a AuditMessageBonk, prev string) (string, error) {
 
 // logic to kill processes from unknown sources :)
 func bonkIP(a AuditMessageBonk) bool {
-	bonked := false
 	// If either IP Allow or IP Deny
-	if (*BonkByIPAllow || *BonkByIPDeny) && *mode == "bonk" {
+	if (*BonkByIPAllow || *BonkByIPDeny) && (*mode == "bonk" || *mode == "honk") {
 		processIPs, err := getIPfromPID(a.Pid)
 		if err != nil && *verbose {
 			fmt.Printf("error> %v\n", err)
 		}
-		fmt.Print("IP ")
 		for IP := range processIPs {
-			fmt.Printf(" %s", IP)
 			// if not in allow
 			if !cf.AllowedIP(IP) && *BonkByIPAllow {
-				syscall.Kill(a.Pid, syscall.SIGKILL)
-				bonked = true
+
+				if *mode == "bonk" {
+					syscall.Kill(a.Pid, syscall.SIGKILL)
+					return true
+				} else if !cf.AllowedIP(IP) {
+					fmt.Printf("[Warn] Bonk -allow- would have nuked this process %v\n", IP)
+				}
 
 				// or if the IP is banned
 			} else if cf.BannedIP(IP) && *BonkByIPDeny {
-				syscall.Kill(a.Pid, syscall.SIGKILL)
-				bonked = true
+				if *mode == "bonk" {
+					syscall.Kill(a.Pid, syscall.SIGKILL)
+					return true
+
+				} else if cf.BannedIP(IP) {
+					fmt.Printf("[Warn] Bonk -deny- would have nuked this process %v\n", IP)
+				}
 
 			}
 		}
 
 	}
-	return bonked
+	return false
 }
