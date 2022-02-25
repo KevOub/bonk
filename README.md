@@ -31,21 +31,27 @@ FAST
 
 ### How to run
 
+Download the binary from release
 ```bash
 sudo ./bonk --mode=load --color=true    
 sudo bonk --mode=bonk -v=false --color=false &
 ```
 
+If you want more manual controls here they are
 ```
-Usage of audit:
+Usage of bonk:
   -backlog uint
         backlog limit (default 8192)
+  -bonkip-a
+        kills IP addresses not in the allow list set by /etc/bonk/config.json (defualt false)
+  -bonkip-d
+        kills IP addresses in the deny list set by /etc/bonk/config.json (defualt false)
   -color
         whether to use color or not (default true)
   -config string
         where custom config is located
   -diag string
-        dump raw information from kernel to file (default "logs")
+        (do not change) dump raw information from kernel to file (default "/var/log/bonk/logs")
   -info
         whether to show informational warnings or just bonks (default true)
   -mode string
@@ -53,13 +59,55 @@ Usage of audit:
         >'load' (load rules)
         >'bonk' (bonk processes)
         >'honk' (just honk no bonk)
-        >'list' (list rules in kernel)
          (default "load")
   -rate uint
         rate limit in kernel (default 0, no rate limit)
   -ro
         receive only using multicast, requires kernel 3.16+
-  -v    whether to print to stdout or not (default true)     
+  -v    whether to print to stdout or not (default true)
+  -warn int
+        Number of bonkable offenses before IP address is said to be a potential threat of an IP (default 10)                  
+```
+
+The default config is 
+```
+{
+    "allowed-ips": [
+        ""
+    ],
+    "banned-ips": [
+        ""
+    ],
+    "allowed-user": [
+        "kevin",
+        "unset",
+        "root"
+    ],
+    "rules": [
+        "-w /var/www/html -p wa -key apache"
+    ],
+    "bonkable": [
+        "actions",
+        "passwd_modification",
+        "group_modification",
+        "user_modification",
+        "network_modifications",
+        "pam",
+        "mail",
+        "sshd",
+        "rootkey",
+        "systemd",
+        "unauthedfileaccess",
+        "priv_esc",
+        "power",
+        "dbus_send",
+        "code_injection",
+        "data_injection",
+        "tracing",
+        "register_injection",
+        "software_mgmt"
+    ]
+}
 ```
 
 ### How it works
@@ -79,9 +127,10 @@ If the syscall is naughty,
 
 does not nuke just says hey I **would** nuke this if you want me to...
 
-### TODO
-- systemctl service ??
-- fix installation script (currently is using two different branches lol)
+>bonkip-a / bonkip-b
+
+looks at the process table to get the IP address and compares it against that of the config. If it violates it either tells you or **bonks** it.
+
 
 
 ### How to disable auditd
