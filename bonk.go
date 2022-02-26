@@ -29,7 +29,7 @@ var (
 	configPath      = fs.String("config", "", "where custom config is located")
 	showInfo        = fs.Bool("info", true, "whether to show informational warnings or just bonks")
 	BonksBeforeWarn = fs.Int("warn", 10, "Number of bonkable offenses before IP address is said to be a potential threat of an IP")
-	BonkByIPAllow   = fs.Bool("bonkip-a", false, "kills IP addresses not in the allow list set by /etc/bonk/config.json (defualt false)")
+	BonkByIPAllow   = fs.Bool("bonkip-a", false, "do not bonk processes in the allow list set by /etc/bonk/config.json (defualt false)")
 	BonkByIPDeny    = fs.Bool("bonkip-d", false, "kills IP addresses in the deny list set by /etc/bonk/config.json (defualt false)")
 	cf              = Config{}
 	RawLogger       *log.Logger

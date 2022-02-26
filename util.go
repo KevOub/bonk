@@ -55,7 +55,7 @@ func handleIP(pid int, event string) {
 			} else {
 				IPAddresses[key] += 1
 				if IPAddresses[key] > *BonksBeforeWarn {
-					OutPutMessage := fmt.Sprintf("[WARN] THE IP ADDRESS %s IS BEING SUSPICIOUS", color.GreenString(key))
+					OutPutMessage := fmt.Sprintf("[WARN] THE IP ADDRESS %s IS BEING SUSPICIOUS", color.HiYellowString(key))
 					fmt.Println(OutPutMessage)
 					IPAddresses[key] = 0 // reset the warns back to 0
 				}
@@ -74,7 +74,7 @@ func saveIP(ip string, event string) error {
 	}
 	defer output.Close()
 
-	output.WriteString(event + "IP=" + ip + "\n")
+	output.WriteString(event + "IP=" + ip + "\n---\n")
 	if err != nil {
 		return err
 	}
@@ -137,6 +137,7 @@ func bonkProc(a AuditMessageBonk, prev string) (string, error) {
 					fmt.Println(outMessage)
 				}
 			}
+			handleIP(a.Pid, outMessage)
 			return outMessage, nil
 		}
 	}

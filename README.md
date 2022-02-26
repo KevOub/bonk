@@ -43,7 +43,7 @@ Usage of bonk:
   -backlog uint
         backlog limit (default 8192)
   -bonkip-a
-        kills IP addresses not in the allow list set by /etc/bonk/config.json (defualt false)
+        do not bonk processes in the allow list set by /etc/bonk/config.json (defualt false)
   -bonkip-d
         kills IP addresses in the deny list set by /etc/bonk/config.json (defualt false)
   -color
@@ -66,7 +66,7 @@ Usage of bonk:
         receive only using multicast, requires kernel 3.16+
   -v    whether to print to stdout or not (default true)
   -warn int
-        Number of bonkable offenses before IP address is said to be a potential threat of an IP (default 10)                  
+        Number of bonkable offenses before IP address is said to be a potential threat of an IP (default 10)                   
 ```
 
 The default config is 
