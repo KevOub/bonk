@@ -90,6 +90,7 @@ func init() {
 		if err != nil && *verbose {
 			fmt.Printf("error> %s\n", err)
 		}
+		fmt.Print("[!] Made /var/bonk\n")
 	}
 	path = "/etc/bonk"
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
@@ -97,6 +98,7 @@ func init() {
 		if err != nil && *verbose {
 			fmt.Printf("error> %s\n", err)
 		}
+		fmt.Print("[!] Made /etc/bonk\n")
 	}
 
 }
@@ -122,8 +124,10 @@ func main() {
 
 	// load configuration file
 	if *configPath == "" {
+		fmt.Printf("[!] Loading %s ... \n", CONFIGPATH)
 		cf.Load(CONFIGPATH)
 	} else {
+		fmt.Printf("[!] Loading %s... \n", *configPath)
 		dumpConfig()
 		cf.Load(*configPath)
 	}

@@ -17,6 +17,11 @@ build:
 	GOARCH=386 GOOS=linux go build -ldflags "$(LDFLAGS)" -o bin/$(BINARY_NAME)-linux-386 .
 	GOARCH=arm GOOS=linux go build -ldflags "$(LDFLAGS)" -o bin/$(BINARY_NAME)-linux-arm .
 	GOARCH=arm64 GOOS=linux go build -ldflags "$(LDFLAGS)" -o bin/$(BINARY_NAME)-linux-arm64 .
+	GOARCH=riscv64 GOOS=linux go build -ldflags "$(LDFLAGS)" -o bin/$(BINARY_NAME)-linux-riscv64 .
+	GOARCH=ppc64 GOOS=linux go build -ldflags "$(LDFLAGS)" -o bin/$(BINARY_NAME)-linux-ppc64 .
+	GOARCH=ppc64le GOOS=linux go build -ldflags "$(LDFLAGS)" -o bin/$(BINARY_NAME)-linux-ppc64le .
+	GOARCH=s390x GOOS=linux go build -ldflags "$(LDFLAGS)" -o bin/$(BINARY_NAME)-linux-s390x .
+	GOARCH=mips GOOS=linux go build -ldflags "$(LDFLAGS)" -o bin/$(BINARY_NAME)-linux-mips .
 
 
 # test:
