@@ -238,21 +238,24 @@ func load(r *libaudit.AuditClient) error {
 	scanner := bufio.NewScanner(data)
 	for scanner.Scan() {
 		if rule2add := scanner.Text(); !strings.HasPrefix(rule2add, "#") && rule2add != "" {
-			if *verbose {
-				fmt.Printf("rule> %s\n", rule2add)
-			}
-			err := ruleAddWrapper(rule2add, r)
-			// r.WaitForPendingACKs()
-			if err != nil && *verbose {
-				fmt.Printf("error> %s\n", err)
-			}
+			go func() {
+
+				if *verbose {
+					fmt.Printf("rule> %s\n", rule2add)
+				}
+				err := ruleAddWrapper(rule2add, r)
+				// r.WaitForPendingACKs()
+				if err != nil && *verbose {
+					fmt.Printf("error> %s\n", err)
+				}
+			}()
 
 		}
 
 	}
 
 	for _, rule := range cf.Rules {
-		if strings.HasPrefix(rule, "#") && rule != "" {
+		if !strings.HasPrefix(rule, "#") && rule != "" {
 			err := ruleAddWrapper(rule, r)
 			// r.WaitForPendingACKs()
 			if err != nil && *verbose {

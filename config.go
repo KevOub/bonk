@@ -58,7 +58,7 @@ func (config Config) AllowedUser(allowMe string) bool {
 		}
 	}
 
-	return allowMe == ""
+	return false
 
 }
 

@@ -21,13 +21,9 @@ You violate the bonk you must be bonked.
 ⠄⠄⠄⠄⠄⠄⠄⠄⠄⠙⡮⡣⡁⠄⠄⠄⠄⠄⠄⠈⠨⡢⡪⠢⠋⠄⠄⠄⠄⠄⠁⠄⠨⡢⡑⡅⢕⠕⣕⢳⢹⢸⢪⢳⡹⡮⡯⡷⡅⠄
 ⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⢯⢎⢆⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠁⠄⠄⠄⠄⠈⠄⠄⠄⠈⠂⠑⠘⠐⠑⠘⠘⠘⠘⠘⠊⠙⠙⠙⠋⠃⠄
 
-https://serverfault.com/questions/752455/what-is-the-correct-way-to-generate-etc-audit-audit-rules-on-centos7
 
 This is a very portable binary. It installs its config file and its own rules
 
-### Response time
-
-FAST
 
 ### How to run
 
@@ -38,6 +34,7 @@ sudo bonk --mode=bonk -v=false --color=false &
 ```
 
 If you want more manual controls here they are
+
 ```
 Usage of bonk:
   -backlog uint
@@ -110,6 +107,17 @@ The default config is
 }
 ```
 
+### Files it creates
+
+> /etc/bonk/config.json
+
+The configuration file
+
+> /var/log/bonk/(bonk.log,bonk-verbose.log,logs)
+
+The logs stored for future lookup
+
+
 ### How it works
 
 
@@ -133,15 +141,3 @@ looks at the process table to get the IP address and compares it against that of
 
 
 
-### How to disable auditd
-```bash
-sudo service auditd stop    
-```
-
-### How to renable auditd
-```bash
-sudo systemctl enable auditd
-sudo service auditd start
-```
-
-https://github.com/deep-security/auditd-config/blob/master/audit.rules

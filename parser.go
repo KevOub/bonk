@@ -109,14 +109,15 @@ func (a *AuditMessageBonk) InitAuditMessage(line string) error {
 	if out := ParseAuditRuleRegex(pidRule, line, "pid="); out != "" {
 		pid2int, err := strconv.Atoi(out)
 		if err != nil {
-			return fmt.Errorf("error>\n%s", err)
+			return fmt.Errorf("error (pid)>\n%s", err)
 		}
 		a.Pid = pid2int
 	}
 	if out := ParseAuditRuleRegex(ppidRule, line, "ppid="); out != "" {
-		pid2int, err := strconv.Atoi(out)
+		tmp := strings.TrimSpace(out)
+		pid2int, err := strconv.Atoi(tmp)
 		if err != nil {
-			return fmt.Errorf("error>\n%v", err)
+			return fmt.Errorf("error (ppid)>\n%v", err)
 		}
 
 		a.PPid = pid2int
@@ -149,11 +150,13 @@ func (a *AuditMessageBonk) InitAuditMessage(line string) error {
 
 		// invalid username
 		if out != "4294967295" && out != "0" {
-			a.Auid = out
-			user, err := user.LookupId(out)
+			a.Auid = strings.TrimSpace(out)
+			// a.Auid = out
+			user, err := user.LookupId(a.Auid)
 			if err != nil {
-				return fmt.Errorf("error>\n%s", err)
+				return fmt.Errorf("error (here?)>\n%s", err)
 			}
+			// fmt.Println(user)
 			a.AuidHumanReadable = user.Username
 		} else {
 			a.Auid = ""
