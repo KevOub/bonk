@@ -12,6 +12,7 @@ import (
 	"os/user"
 	"strings"
 
+	"github.com/KevOub/bonk/pkg/bonk"
 	"github.com/elastic/go-libaudit/v2"
 	"github.com/elastic/go-libaudit/v2/auparse"
 	"github.com/fatih/color"
@@ -128,7 +129,7 @@ func main() {
 		cf.Load(CONFIGPATH)
 	} else {
 		fmt.Printf("[!] Loading %s... \n", *configPath)
-		dumpConfig()
+		// dumpConfig()
 		cf.Load(*configPath)
 	}
 	fmt.Printf("CONFIG:\n%+v\n\n", cf)
@@ -272,7 +273,7 @@ func load(r *libaudit.AuditClient) error {
 // mode=bonk,honk : takes the libaudit client and monitors for naughty processes
 func receive(r *libaudit.AuditClient) error {
 
-	var a AuditMessageBonk
+	var a bonk.AuditMessageBonk
 	prevMessage := ""
 
 	// var outMessagePrev string
@@ -297,7 +298,7 @@ func receive(r *libaudit.AuditClient) error {
 			// so this is a new audit message
 			// bonk the cumulative message
 			if *mode == "bonk" || *mode == "honk" {
-				prevMessage, _ = bonkProc(a, prevMessage)
+				prevMessage, _ = bonk.bonkProc(a, prevMessage)
 			}
 			// then make new audit message
 			a = AuditMessageBonk{}
