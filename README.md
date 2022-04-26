@@ -1,8 +1,22 @@
 ## Bonk
 
+## TODO
+
+> Refactor pkg/bonk/util.go
+
+[ ] - Add function labelling PID as bonkable
+[ ] - Add function labelling IP as bonkable
+[ ] - Remove unneeded util.go files
+
+> Refactor pkg/bonk/net.go
+
+[ ] - Make Code Pretty 
+
+
 Turns linux kernel audit features into a death weapon.
 You violate the bonk you must be bonked.
 
+```
 ⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄
 ⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄
 ⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⡀⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄
@@ -20,7 +34,7 @@ You violate the bonk you must be bonked.
 ⠄⠄⠄⠄⠄⠈⠘⠷⢟⢮⡳⡱⣑⢌⠪⠨⠪⠺⠸⡨⡢⢄⣀⢰⠍⠄⠄⠄⠄⠄⠄⡀⢘⢌⢎⠪⡪⡪⡮⣗⢗⣗⢽⢕⢯⢮⡳⣯⠄⠄
 ⠄⠄⠄⠄⠄⠄⠄⠄⠄⠙⡮⡣⡁⠄⠄⠄⠄⠄⠄⠈⠨⡢⡪⠢⠋⠄⠄⠄⠄⠄⠁⠄⠨⡢⡑⡅⢕⠕⣕⢳⢹⢸⢪⢳⡹⡮⡯⡷⡅⠄
 ⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⢯⢎⢆⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠁⠄⠄⠄⠄⠈⠄⠄⠄⠈⠂⠑⠘⠐⠑⠘⠘⠘⠘⠘⠊⠙⠙⠙⠋⠃⠄
-
+```
 
 This is a very portable binary. It installs its config file and its own rules
 

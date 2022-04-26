@@ -3,13 +3,13 @@ package main
 import (
 	"embed"
 	_ "embed"
-	"fmt"
 
 	"github.com/KevOub/bonk/pkg/bonk"
 )
 
 func test(a bonk.AuditMessageBonk, b bonk.Config) {
-	fmt.Printf("%+v\n", a)
+	// fmt.Printf("%+v\n", a)
+	// bonk.BonkCheck()
 }
 
 // EMBEDDING LOGIC
@@ -43,5 +43,5 @@ func main() {
 	config.DontEmbedRules = false
 	config.Verbose = true
 	// and enter the infinite loop
-	bonk.StreamAudit(parser, config, test)
+	bonk.StreamAudit(parser, config, bonk.BonkCheck)
 }
