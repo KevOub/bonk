@@ -18,7 +18,7 @@ var content embed.FS
 
 func main() {
 
-	var parser bonk.AuditMessageBonk
+	var parser bonk.Parser
 	var config bonk.Config
 
 	// f, _ := content.Open("embed/config.json")
@@ -43,5 +43,6 @@ func main() {
 	config.DontEmbedRules = false
 	config.Verbose = true
 	// and enter the infinite loop
-	bonk.StreamAudit(parser, config, bonk.BonkCheck)
+	bonk.StreamAudit(parser, config, bonk.BonkCheckVerbose)
+
 }

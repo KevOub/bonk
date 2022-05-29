@@ -23,7 +23,7 @@ var (
 	receiveOnly = fs.Bool("ro", false, "receive only using multicast, requires kernel 3.16+")
 )
 
-func StreamAudit(parser AuditMessageBonk, config Config, bonkfunc func(AuditMessageBonk, Config)) {
+func StreamAudit(parser Parser, config Config, bonkfunc func(Parser, Config)) {
 
 	if err := read(parser, config, bonkfunc); err != nil {
 		log.Fatalf("error: %v", err)
@@ -31,7 +31,7 @@ func StreamAudit(parser AuditMessageBonk, config Config, bonkfunc func(AuditMess
 
 }
 
-func read(parser AuditMessageBonk, config Config, bonkfunc func(AuditMessageBonk, Config)) error {
+func read(parser Parser, config Config, bonkfunc func(Parser, Config)) error {
 	if os.Geteuid() != 0 {
 		return errors.New("you must be root to receive audit data")
 	}
@@ -105,6 +105,8 @@ func read(parser AuditMessageBonk, config Config, bonkfunc func(AuditMessageBonk
 		}
 	}
 
+	fmt.Println("\n[*] Done setting up client \n ")
+
 	// go straight to bonking
 	if config.Operation == HONK || config.Operation == BONK {
 		return receive(client, config, parser, bonkfunc)
@@ -163,7 +165,7 @@ func load(config Config, r *libaudit.AuditClient) error {
 			RuleByteEq[rule2add] = value
 			if config.Verbose {
 				if err != nil {
-					fmt.Printf("error> %s\n", err)
+					fmt.Printf("error with rule (%s) > %s\n", rule2add, err)
 				} else {
 					fmt.Printf("> Found rule :%s\n", rule2add)
 
@@ -174,18 +176,24 @@ func load(config Config, r *libaudit.AuditClient) error {
 
 	}
 
+	fmt.Printf("Found %d rules \n", len(RuleByteEq))
+
 	// go through and add all rules
 	start := time.Now()
 	for key, val := range RuleByteEq {
 		rule := val
 		// err := RuleAddWrapper(rule, r, currRules)
 		if !RuleAlreadyAdded(val, currRules) {
-			r.AddRule(rule)
+			err := r.AddRule(rule)
+			if err != nil {
+				log.Print(err)
+			}
+
 			r.WaitForPendingACKs()
 			if config.Verbose {
 				fmt.Printf("> Added rule :%s\n", key)
 				if err != nil {
-					fmt.Printf("error> %s\n", err)
+					fmt.Printf("error with rule (%s) > %s\n", key, err)
 				}
 			}
 		}
@@ -203,7 +211,7 @@ func load(config Config, r *libaudit.AuditClient) error {
 }
 
 // receive is the game loop essentially. It goes forever looking for new messages running bonkfunc when the AuditID does not match the previous
-func receive(r *libaudit.AuditClient, config Config, parser AuditMessageBonk, bonkfunc func(AuditMessageBonk, Config)) error {
+func receive(r *libaudit.AuditClient, config Config, parser Parser, bonkfunc func(Parser, Config)) error {
 	for {
 		rawEvent, err := r.Receive(false)
 		if err != nil {
@@ -218,10 +226,13 @@ func receive(r *libaudit.AuditClient, config Config, parser AuditMessageBonk, bo
 
 		// if the parser has a new AuditID start the bonk process
 		if parser.IsNewAuditID(string(rawEvent.Data)) {
-			// TODO add to config to set mode
-			bonkfunc(parser, config)
 
-			parser = AuditMessageBonk{}
+			// call the bonkfunc in a seperate go routine so that we can continue to receive messages
+
+			// TODO add to config to set mode
+			go bonkfunc(parser, config)
+
+			// parser =
 			parser.InitAuditMessage(string(rawEvent.Data))
 
 		} else {
@@ -231,6 +242,9 @@ func receive(r *libaudit.AuditClient, config Config, parser AuditMessageBonk, bo
 				fmt.Print(err)
 			}
 		}
-		// fmt.Printf("type=%v msg=%v\n", rawEvent.Type, string(rawEvent.Data))
+
+		if config.Verbose {
+			fmt.Printf("type=%v msg=%v\n", rawEvent.Type, string(rawEvent.Data))
+		}
 	}
 }
