@@ -224,27 +224,20 @@ func receive(r *libaudit.AuditClient, config Config, parser Parser, bonkfunc fun
 			continue
 		}
 
-		// if the parser has a new AuditID start the bonk process
-		if parser.IsNewAuditID(string(rawEvent.Data)) {
-
-			// call the bonkfunc in a seperate go routine so that we can continue to receive messages
-
-			// TODO add to config to set mode
-			go bonkfunc(parser, config)
-
-			// parser =
-			parser.InitAuditMessage(string(rawEvent.Data))
-
+		// newentry := parser.Parse(rawEvent.Data)
+		newentry := parser.NewLog(string(rawEvent.Data))
+		if newentry {
+			bonkfunc(parser, config)
+			parser.Init()
+			parser.Parse(rawEvent.Data)
 		} else {
-			parser.InitAuditMessage(string(rawEvent.Data))
-			err := parser.InitAuditMessage(string(rawEvent.Data))
-			if err != nil {
-				fmt.Print(err)
-			}
+			parser.Parse(rawEvent.Data)
 		}
 
 		if config.Verbose {
-			fmt.Printf("type=%v msg=%v\n", rawEvent.Type, string(rawEvent.Data))
+			// fmt.Printf("\t%s\n", parser.List())
+			// fmt.Printf("type=%v msg=%v\n", rawEvent.Type, string(rawEvent.Data))
+			continue
 		}
 	}
 }

@@ -3,7 +3,7 @@ package bonk
 import (
 	"bytes"
 	"fmt"
-	"sync"
+	"strconv"
 	"syscall"
 
 	"github.com/elastic/go-libaudit/rule"
@@ -72,69 +72,95 @@ func RuleAddWrapper(rule2add string, r *libaudit.AuditClient, currRules [][]byte
 	return nil
 }
 
-// BonkCheckVerbose is a verbose multi-step stager that goes through various methods
+// BonkEnforcer is a verbose multi-step stager that goes through various methods
 // to determine whether or not the audit message warrants the PID to be bonked
-func BonkCheckVerbose(a AuditMessageBonk, config Config) {
+func BonkEnforcer(a Parser, config Config) {
 
-	bonkableChann := make(chan map[string]bool)
-	bonkBadProcesses := config.Operation == BONK || config.Operation == LOCKANDLOAD // variable to represent whether or not to kill proccess
+	// bonkableChann := make(chan map[string]bool)
 	killProcess := false
-	var wg sync.WaitGroup
+	violations := []string{}
 
 	// first, check if user is allowed to do what the user needs to do
-	if config.AllowedUser(a.AuidHumanReadable) {
-		return
+	// fmt.Printf("auid=%s\n", a.Get("auid"))
+	// fmt.Printf("AUID=%s\n", a.Get("AUID"))
+	// if config.AllowedUser(a.Get("auid")) {
+	// return
+	// }
+	// fmt.Println(config.AllowedUser(a.Get("auid")))
+
+	pidSTR := a.Get("pid")
+	fmt.Println(pidSTR)
+	// if pidSTR == "" {
+	// return
+	// }
+	pid, err := strconv.Atoi(a.Get("pid"))
+	if err != nil {
+		fmt.Printf("error converting PID to int: %v\n", err)
 	}
 
-	// second, check if user is in an allowed IP address TODO
-	// if config.AllowedIP(){}
+	if config.AllowListMode {
+		data, _ := getIPfromPID(pid)
+		for ip, _ := range data {
+			if config.AllowedIP(ip) {
+				if config.Verbose {
+					fmt.Printf("IP %s is in the allow list\n", ip)
+				}
+				killProcess = false
+				// if we are in the IP allow list and see a permitted IP, return immediately
+				// no harm to this IP
+				return
+			}
 
-	// third, check the lists of offenses. For now it is just the DenyList and the rules from auditd itself which are bad
-	// in the future YARA rule integration can be added here and it should seamlessly fit in
-	// Another option is to have afunction which checks hashes against the audit messages' PID's ioctl number
+		}
+	}
 
 	if config.DenyListMode {
-		wg.Add(1)
-		go func() {
-			result := map[string]bool{"ip-deny": false}
-			bonkableChann <- result
-		}()
-	}
-
-	if config.Operation == BONK || config.Operation == HONK || config.Operation == LOCKANDLOAD {
-		wg.Add(1)
-		go func() {
-			result := map[string]bool{"bonkable-pid": false}
-			if config.IsBonkable(a.Key) {
-				result["bonkable-pid"] = true
-			}
-			bonkableChann <- result
-		}()
-	}
-
-	// collects all the willy nilly channels
-	go func() {
-		// defer wg.Done() <- Never gets called since the 100 `Done()` calls are made above, resulting in the `Wait()` to continue on before this is executed
-		// go through the offenses possible [ip-allow,ip-deny, and bonkable-pid] to determine if the process should be killed
-		for val := range bonkableChann {
-			for offense, violated := range val {
-				if violated && bonkBadProcesses {
-					// boom killed
-					killProcess = true
-					// TODO add logging here to explain which part got bonked
-					fmt.Printf("[!] The process with PID %d was seen in violation of %s\n", a.Pid, offense)
+		data, _ := getIPfromPID(pid)
+		for ip, _ := range data {
+			if config.BannedIP(ip) {
+				if config.Verbose {
+					fmt.Printf("IP %s is in the deny list\n", ip)
 				}
-
+				// if we are in the IP deny list and see a banned IP, label the process as bad
+				violations = append(violations, fmt.Sprintf("IP (%s) in deny list", ip))
+				killProcess = true
 			}
-			if killProcess {
-				syscall.Kill(a.Pid, syscall.SIGKILL)
-			}
 
-			wg.Done() // ** move the `Done()` call here
 		}
-	}()
+	}
 
-	wg.Wait()
-	fmt.Printf("%+v\n", a)
+	if config.Operation == BONK || config.Operation == LOCKANDLOAD || config.Operation == HONK {
+		keyval := a.Get("key")
+		// s = s[1 : len(s)-1]
+		keyval = keyval[1 : len(keyval)-1]
+
+		if config.IsBonkable(keyval) {
+			if config.Verbose {
+				fmt.Printf("%s is in the bonk list\n", a.Get("key"))
+			}
+			violations = append(violations, fmt.Sprintf("%s in bonk list", a.Get("key")))
+			killProcess = true
+		}
+	}
+
+	fmt.Printf("violations: %v\n", violations)
+	// Finally, nuke process from orbit
+	if killProcess {
+
+		fmt.Printf("The process %d has commited these crimes\n", pid)
+		for _, v := range violations {
+			fmt.Printf("\t>%s\n", v) // listing violations
+		}
+
+		if config.Operation == HONK {
+			fmt.Printf("[The process %d would be bonked if not mode honk]\n", pid)
+			return
+		}
+
+		err := syscall.Kill(pid, syscall.SIGKILL)
+		if err != nil {
+			fmt.Printf("error killing process: %v\n", err)
+		}
+	}
 
 }

@@ -1,235 +1,79 @@
 package bonk
 
 import (
-	"encoding/hex"
-	"fmt"
-	"log"
-	"os/user"
-	"regexp"
-	"strconv"
 	"strings"
 )
 
-var (
-	// auditIDRule = regexp.MustCompile("(:)(.*?)())")
-	msgRule = regexp.MustCompile(`audit\((.*?)\)`)
-	// syscall     = regexp.MustCompile("syscall=[0-9]{0,3}")
-
-	terminalRule  = regexp.MustCompile(`terminal=([\w\\/]+)`)
-	ttyRule       = regexp.MustCompile(`tty=([\w\\/]+)`)
-	exeRule       = regexp.MustCompile(`exe="(.*?)"`)
-	keyRule       = regexp.MustCompile(`key="(.*?)"`)
-	pidRule       = regexp.MustCompile(`pid=([\d]+)`)
-	ppidRule      = regexp.MustCompile(`ppid=([\d]+)`)
-	nameRule      = regexp.MustCompile(`name=\"(.*?)\"`)
-	auidRule      = regexp.MustCompile(`auid=([\d].?)+`)
-	uidRule       = regexp.MustCompile(`uid=([\d].?)+`)
-	auidRuleAlpha = regexp.MustCompile(`AUID="(.*?)"`)
-	proctileRule  = regexp.MustCompile(`proctitle=(([\w].?)+)`)
-	// Rules        = make(map[*regexp.Regexp]string)
-)
-
-// func init() {
-// 	Rules[terminalRule] = "terminal="
-// 	Rules[ttyRule] = "tty="
-// 	Rules[exeRule] = "exe="
-// 	Rules[keyRule] = "key="
-// 	Rules[pidRule] = "pid="
-// 	Rules[ppidRule] = "ppid="
-// 	Rules[nameRule] = "name="
-// 	Rules[auidRule] = "auid="
-// 	Rules[proctileRule] = "proctitle="
-// }
-
-type AuditMessageBonk struct {
-	// msg=audit(1364481363.243:24287):
-	AuditIDRaw string `json:"-"`
-	AuditID    string `json:"auditID"`
-	Timestamp  string `json:"timestamp"`
-
-	// syscall=2 (not used)
-	Syscall int `json:"Syscall"`
-	// success=no
-	Success bool `json:"success"`
-
-	// terminal=/dev/pts/0 (not found often ???)
-	Terminal string `json:"terminal"`
-	// tty=pts0
-	Tty string `json:"tty"`
-	// exe="/bin/cat"
-	Exe string `json:"exe"`
-	// key="sshd_config"
-	Key string `json:"key"`
-
-	// should be self explanatory
-	Pid               int    `json:"pid"`
-	PPid              int    `json:"ppid"`
-	Auid              string `json:"auid"`
-	Uid               string `json:"uid"`
-	AuidHumanReadable string `json:"auid-hr"` //human readable
-
-	// name="/home/kevin"
-	Name string `json:"name"`
-
-	// proctile=636174002F6574632F7373682F737368645F636F6E666967
-	Proctile              string `json:"proctitle"`
-	ProctileHumanreadable string `json:"-"`
-
-	// Finished is the flag to say that it is done processing
-	// Extras
-	Finished bool `json:"-"`
+type Parser interface {
+	Init()                   // Init() creates the map[string]string for the fields
+	Parse(msg []byte) bool   // Parse() takes a byte slice and returns a bool if the message is a new audit message
+	Get(key string) string   // Get() takes a key and returns the value
+	List() map[string]string // List() returns the map[string]string
+	NewLog(msg string) bool  // NewLog() takes a string and a previous string and returns a bool if the message is a new audit message
 }
 
-func (a *AuditMessageBonk) InitAuditMessage(line string) error {
-	a.AuditIDRaw = ParseAuditRuleRegex(msgRule, line, "")
+// SAMPLE INTERFACE FOR PARSING AUDIT LOGS
 
-	if a.AuditIDRaw != "" && len(a.AuditIDRaw) > 20 {
-		a.Timestamp = a.AuditIDRaw[6:20]
-		a.AuditID = a.AuditIDRaw[21:]
-		a.AuditID = strings.Trim(a.AuditID, ")")
-	} else {
-		return nil
-	}
-	// fmt.Printf("%s\t%s\n", a.Timestamp, a.AuditID)
+type AuditLogFields struct {
+	Fields  map[string]string `json:"fields"`
+	AuditID string            `json:"auditID"`
+}
 
-	// gross code. Take the regex from above along with the line and the key to remove
-	if out := ParseAuditRuleRegex(terminalRule, line, "terminal="); out != "" {
-		a.Tty = out
-	}
+func (a *AuditLogFields) Init() {
+	a.AuditID = ""
+	a.Fields = make(map[string]string)
+}
 
-	if out := ParseAuditRuleRegex(ttyRule, line, "tty="); out != "" {
-		a.Tty = out
-	}
-	if out := ParseAuditRuleRegex(exeRule, line, "exe="); out != "" {
-		a.Exe = out
-	}
-	if out := ParseAuditRuleRegex(keyRule, line, "key="); out != "" {
-		a.Key = out
-	}
-	if out := ParseAuditRuleRegex(pidRule, line, "pid="); out != "" {
-		pid2int, err := strconv.Atoi(out)
-		if err != nil {
-			return fmt.Errorf("error (pid)>\n%s", err)
-		}
-		a.Pid = pid2int
-	}
-	if out := ParseAuditRuleRegex(ppidRule, line, "ppid="); out != "" {
-		tmp := strings.TrimSpace(out)
-		pid2int, err := strconv.Atoi(tmp)
-		if err != nil {
-			return fmt.Errorf("error (ppid)>\n%v", err)
-		}
+func (a *AuditLogFields) NewLog(msg string) bool {
 
-		a.PPid = pid2int
-	}
-	// a.Name = ParseAuditRuleRegex(nameRule, line, "name=")
-	// a.Proctile = ParseAuditRuleRegex(proctileRule, line, "proctitle=")
-	// a.ProctileHumanreadable = string(a.Proctile)
+	for _, word := range strings.Split(string(msg), " ") {
 
-	if out := ParseAuditRuleRegex(nameRule, line, "name="); out != "" {
-		a.Name = out
-	}
+		// go snippet that splits the string by equal sign
 
-	if out := ParseAuditRuleRegex(proctileRule, line, "proctitle="); out != "" {
-		a.Proctile = out
-		// a := "2F7573722F73686172652F636F64652F636F6465202D2D756E6974792D6C61756E6368"
-		bs, err := hex.DecodeString(out)
-		if err != nil {
-			return fmt.Errorf("error>\n%v", err)
-		}
-		// out, err := strconv.Unquote("\"" + string(bs) + "\"")
-		// if err != nil {
-		// 	return fmt.Errorf("error>\n%v", err)
-		// }
-		a.Proctile = string(bs)
+		if strings.Contains(word, "audit") {
+			if len(word) >= 21 {
+				val := word[21:]
+				val = strings.Replace(val, "):", "", -1)
 
-	}
+				if a.AuditID == "" {
+					a.AuditID = val
+				} else if a.AuditID != val {
+					// a.AuditID = val
+					return true
+				}
 
-	if out := ParseAuditRuleRegex(auidRule, line, "auid="); out != "" {
-		// a.Auid = ParseAuditRuleRegex(auidRule, line, "auid=")
-
-		// invalid username
-		if out != "4294967295" && out != "0" {
-			a.Auid = strings.TrimSpace(out)
-			// a.Auid = out
-			user, err := user.LookupId(a.Auid)
-			if err != nil {
-				return fmt.Errorf("error (here?)>\n%s", err)
 			}
-			// fmt.Println(user)
-			a.AuidHumanReadable = user.Username
-		} else {
-			a.Auid = ""
-			a.AuidHumanReadable = ""
 		}
 	}
 
-	if out := ParseAuditRuleRegex(uidRule, line, "uid="); out != "" {
-		// a.Auid = ParseAuditRuleRegex(auidRule, line, "auid=")
-		a.Uid = out
-
-	}
-
-	if out := ParseAuditRuleRegex(auidRuleAlpha, line, "AUID="); out != "" {
-		fmt.Println(out)
-		// TODO not found currently ??
-		a.AuidHumanReadable = out
-	}
-
-	return nil
-
-}
-
-func ParseAuditRuleRegex(rules *regexp.Regexp, msg string, remove string) string {
-	// apply regex magic. Maybe could be better
-	value := rules.Find([]byte(msg))
-
-	/*
-		The code below is necessary due to regex shenanigans. In order to use regex with lookaheads it violates golang's regex library promise to be o(n)
-		Subsequently we must comply and write the following code to remove the characters upto the equal
-		I could use regex+match second group but this works just fine!
-		https://groups.google.com/g/golang-nuts/c/7qgSDWPIh_E
-	*/
-
-	// if it zero nothing found
-	if len(value) == 0 {
-		return ""
-	}
-	sizeOfRemove := len(remove)
-
-	if sizeOfRemove > len(value) {
-		log.Fatalf("REMOVE=%s is too long for msg=%s\n", remove, msg)
-	}
-	// trim first n characters just to have what is longer than the value
-	output := string(value[sizeOfRemove:])
-
-	// remove quotes
-	if output[0] == '"' {
-		outputWithoutQuotes := strings.Trim(output, "\"")
-		return outputWithoutQuotes
-	}
-
-	return output
-
-}
-
-func (a AuditMessageBonk) IsNewAuditID(line string) bool {
-	var AuditID string
-	AuditIDRaw := ParseAuditRuleRegex(msgRule, line, "")
-	if a.AuditIDRaw == "" {
-		return true
-	}
-
-	if AuditIDRaw != "" && len(AuditIDRaw) > 20 {
-		// Timestamp := a.AuditIDRaw[6:20]
-		AuditID = AuditIDRaw[21:]
-		AuditID = strings.Trim(AuditID, ")")
-		if AuditID == a.AuditID {
-			return false
-		} else {
-			return true
-		}
-	}
 	return false
+}
 
+func (a *AuditLogFields) Parse(msg []byte) bool {
+
+	// boolean that will be returned
+	// Since the parser is stateless and only parses we need to keep track
+	// when the current line is a new audit message
+	newentry := false
+
+	for _, word := range strings.Split(string(msg), " ") {
+		if strings.Contains(word, "=") {
+			keyval := strings.Split(word, "=")
+			if len(keyval) == 2 {
+				a.Fields[keyval[0]] = keyval[1]
+			}
+		}
+
+	}
+
+	return newentry
+}
+
+func (a AuditLogFields) Get(key string) string {
+
+	return a.Fields[key]
+}
+
+func (a AuditLogFields) List() map[string]string {
+	return a.Fields
 }

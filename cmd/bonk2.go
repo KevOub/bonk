@@ -7,19 +7,16 @@ import (
 	"github.com/KevOub/bonk/pkg/bonk"
 )
 
-func test(a bonk.AuditMessageBonk, b bonk.Config) {
-	// fmt.Printf("%+v\n", a)
-	// bonk.BonkCheck()
-}
-
 // EMBEDDING LOGIC
 //go:embed embed/config.json embed/good.rules
 var content embed.FS
 
 func main() {
 
-	var parser bonk.Parser
+	var parser bonk.AuditLogFields
 	var config bonk.Config
+
+	parser.Init()
 
 	// f, _ := content.Open("embed/config.json")
 	// data, _ := ioutil.ReadFile("embed/config.json")
@@ -39,10 +36,12 @@ func main() {
 	config.EmbedRules(defaultRules)
 
 	// Finally, specify operation
-	config.Operation = bonk.LOCKANDLOAD
+	config.Operation = bonk.BONK
 	config.DontEmbedRules = false
 	config.Verbose = true
+	config.AllowListMode = false
+	config.DenyListMode = false
 	// and enter the infinite loop
-	bonk.StreamAudit(parser, config, bonk.BonkCheckVerbose)
+	bonk.StreamAudit(&parser, config, bonk.BonkEnforcer)
 
 }

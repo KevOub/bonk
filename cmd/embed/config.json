@@ -15,6 +15,7 @@
     ],
     "bonkable": [
         "actions",
+        "etcpasswd",
         "passwd_modification",
         "group_modification",
         "user_modification",
